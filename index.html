@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parlamento y Diplomacia</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%231e3d32'/%3E%3Ccircle cx='32' cy='32' r='27' fill='none' stroke='%23c9a24b' stroke-width='2'/%3E%3Cpath d='M14 44a18 18 0 0 1 36 0' fill='none' stroke='%23f2ecd9' stroke-width='5' stroke-dasharray='2 5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='17' r='5' fill='%23c9a24b'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Besley:wght@500;700;800&family=Sofia+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="pantalla-menu" class="pantalla">
+    <div class="menu">
+      <div id="menu-caja"></div>
+      <div id="menu-hero"></div>
+    </div>
+  </div>
+
+  <div id="pantalla-juego" class="pantalla" hidden>
+    <header class="cabecera">
+      <div id="marca"></div>
+      <div id="stats"></div>
+      <div class="cab-botones">
+        <button class="btn-ico" id="btn-opciones" data-a="abrir" data-v="opciones" aria-label="Opciones" title="Opciones"></button>
+        <div id="turno" hidden></div>
+        <button id="btn-mes" class="btn laton" data-a="mes" title="Atajo: barra espaciadora"></button>
+      </div>
+      <div class="legislatura" title="Avance de la legislatura"><span id="leg-barra"></span></div>
+    </header>
+
+    <main>
+      <section class="col-mapa">
+        <div class="mapa-marco">
+          <div id="mapa-modos" role="group" aria-label="Qué muestra el mapa"></div>
+          <div id="mapa-zoom" role="group" aria-label="Zoom del mapa">
+            <button data-a="zoom" data-v="mas" aria-label="Acercar" title="Acercar (también con la rueda del ratón)"><svg class="ico" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M10.5 7.5v6M7.5 10.5h6"/></svg></button>
+            <button data-a="zoom" data-v="menos" aria-label="Alejar" title="Alejar"><svg class="ico" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M7.5 10.5h6"/></svg></button>
+            <button data-a="zoom" data-v="todo" aria-label="Ver el mapa entero" title="Ver el mapa entero"><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+          </div>
+          <svg id="mapa" role="img" aria-label="Mapa de Aldora y sus vecinos"></svg>
+          <div id="mapa-leyenda"></div>
+        </div>
+        <section id="jugadores" hidden></section>
+        <div id="asesora" hidden></div>
+        <div class="bajo-mapa">
+          <section id="objetivos"></section>
+          <section id="prensa"></section>
+        </div>
+      </section>
+      <aside class="panel">
+        <nav id="tabs" aria-label="Secciones del gobierno"></nav>
+        <div id="contenido"></div>
+      </aside>
+    </main>
+  </div>
+
+  <div id="modal" hidden></div>
+  <div id="avisos" aria-live="polite"></div>
+  <div id="tooltip" hidden></div>
+
+  <!-- PeerJS conecta los navegadores para el multijugador. Sin internet, el modo de un jugador funciona igual. -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/iconos.js"></script>
+  <script src="js/mapa.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/carrera.js"></script>
+  <script src="js/guerra.js"></script>
+  <script src="js/acciones.js"></script>
+  <script src="js/red.js"></script>
+  <script src="js/ui-base.js"></script>
+  <script src="js/ui-menu.js"></script>
+  <script src="js/ui-carrera.js"></script>
+  <script src="js/ui-guerra.js"></script>
+  <script src="js/ui-multi.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
