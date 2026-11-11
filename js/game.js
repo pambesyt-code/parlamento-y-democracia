@@ -46,13 +46,14 @@ function usarNacion(s) {
   PAIS_JUGADOR.colores = tonosPais(s.config.colorPais);
   ID_JUGADOR = s.config.propio ? 'uc' : s.config.partidoId;
   MESES_LEGISLATURA = s.config.legislatura;
+  LIDER_INICIAL = (s.lideres && s.lideres[ID_JUGADOR]) || 'Marta Solís';
   verDesde(s.nacion);
 }
 
 // Nombre, color y bandera con los que los demás ven el país de un jugador.
 function registrarHumano(pid, cfg) {
   Object.assign(NACIONES[pid], {
-    nombre: cfg.pais, color: cfg.colorPais, bandera: banderaJugador(cfg.colorPais), lider: cfg.lider,
+    humano: true, nombre: cfg.pais, color: cfg.colorPais, bandera: banderaJugador(cfg.colorPais), lider: cfg.lider,
     gobierno: `Gobierno de ${cfg.lider}`, desc: `Lo dirige ${cfg.lider}, de ${cfg.partido}.`,
   });
 }
@@ -104,7 +105,7 @@ function crearNacion(cfg, pid, comun) {
     grupos: {}, edificios: {}, obras: [], leyes: {}, escanos: {}, relPartidos: {}, paises: {}, ministros: {},
     prestamos: [], promesas: [], objetivos: {}, historial: [],
     tropas: TROPAS_INICIALES, guerras: {}, batallas: [], anexiones: [], mapaVersion: 0,
-    impuestos: 'normales', tributos: [], propuestas: [],
+    impuestos: 'normales', tributos: [], propuestas: [], oposicion: [], tokenGobierno: null, lideres: lideresAlAzar(cfg.lider),
     duenos: comun.duenos, ocupadas: comun.ocupadas, mundo: comun.mundo,
     cuenta: { obras: 0, leyes: 0, elecciones: 0, plenos: 0, propuestas: 0, conquistas: 0 },
     propuesta: null, votacion: null, resultadoVoto: null, evento: null, congreso: null, elecciones: null, fin: null, ultimaLey: null,
@@ -121,13 +122,7 @@ function crearNacion(cfg, pid, comun) {
     s.paises[otro] = { relacion: r, base: r, tratado: false, alianza: false, embargo: false, tregua: 0 };
   }
   enlazarNacion(s);
-  // Los partidos parecidos al tuyo parten con mejor relación contigo.
-  const mia = afinidadDe(s, ID_JUGADOR);
-  for (const partido in PARTIDOS) {
-    if (partido === ID_JUGADOR) continue;
-    const suya = PARTIDOS[partido].afinidad;
-    s.relPartidos[partido] = limitar(Object.keys(mia).reduce((a, t) => a + mia[t] * (suya[t] || 0), 0) * 3, -30, 30);
-  }
+  relacionesIniciales(s);
   for (const id in CARTERAS) s.ministros[id] = null;
   s.escanos = estimarVotos(s, false);
   if (cfg.modo === 'carrera') iniciarCarrera(s);
@@ -136,6 +131,23 @@ function crearNacion(cfg, pid, comun) {
     noticia(s, `${cfg.lider} toma posesión como jefe de gobierno de ${cfg.pais}.`);
   }
   return s;
+}
+
+// Un nombre distinto para quien dirige cada partido (y ninguno igual al tuyo).
+function lideresAlAzar(tuNombre) {
+  const libres = NOMBRES_LIDERES.filter(n => n !== tuNombre).sort(() => Math.random() - 0.5);
+  return Object.fromEntries(Object.keys(PARTIDOS).map((pid, i) => [pid, libres[i % libres.length]]));
+}
+
+// Los partidos parecidos al del gobierno parten con mejor relación con él.
+function relacionesIniciales(s) {
+  const mia = afinidadDe(s, ID_JUGADOR);
+  s.relPartidos = {};
+  for (const partido in PARTIDOS) {
+    if (partido === ID_JUGADOR) continue;
+    const suya = afinidadDe(s, partido);
+    s.relPartidos[partido] = limitar(Object.keys(mia).reduce((a, t) => a + mia[t] * (suya[t] || 0), 0) * 3, -30, 30);
+  }
 }
 
 // Partida de un jugador.
@@ -176,7 +188,7 @@ function fecha(mes) { return `${MESES[mes % 12]} de ${ANIO_INICIAL + Math.floor(
 // tipo: 'bien', 'mal', 'mundo' (algo que pasa entre otros países) o vacío.
 function noticia(s, texto, tipo = '') {
   s.noticias.unshift({ mes: s.mes, texto, tipo });
-  s.noticias.length = Math.min(s.noticias.length, 40);
+  s.noticias.length = Math.min(s.noticias.length, 100);
   s.nNoticias++;
 }
 
@@ -189,11 +201,20 @@ function siglasDe(nombre) {
   return sig.length >= 2 ? sig : (limpio.slice(0, 2).toUpperCase() || 'TP');
 }
 
-// Qué tipos de ley le gustan a un partido. El tuyo, si lo has creado, sale de sus principios.
+// Los principios de un partido creado por un jugador (el del gobierno o uno de la oposición); null si no lo es.
+function principiosDe(s, pid) {
+  if (!s) return null;
+  if (pid === ID_JUGADOR) return s.config.propio ? s.config.principios : null;
+  const o = opositorDe(s, pid);
+  return o && o.perfil.propio ? o.perfil.principios : null;
+}
+
+// Qué tipos de ley le gustan a un partido. Los creados por jugadores, según sus principios.
 function afinidadDe(s, pid) {
-  if (pid !== ID_JUGADOR || !s.config.propio) return PARTIDOS[pid].afinidad;
+  const principios = principiosDe(s, pid);
+  if (!principios) return PARTIDOS[pid].afinidad;
   const a = {};
-  for (const t of s.config.principios) {
+  for (const t of principios) {
     a[t] = 2;
     if (PRINCIPIOS[t].opuesto) a[PRINCIPIOS[t].opuesto] = -2;
   }
@@ -203,27 +224,44 @@ const ideologiaLey = (afinidad, ley, derogar) => ley.tags.reduce((a, t) => a + (
 // Lo que tu partido piensa de una ley: positivo si encaja con sus ideas, negativo si las contradice.
 const opinionPartido = (s, leyId, derogar) => ideologiaLey(afinidadDe(s, ID_JUGADOR), LEY_POR_ID[leyId], derogar);
 
-// Datos de un partido listos para mostrar; el tuyo, si lo has creado, sale de la configuración.
+// Quién dirige cada partido: tú, otro jugador o un nombre de la partida.
+function liderDe(s, pid) {
+  if (!s) return '';
+  if (pid === ID_JUGADOR) return s.modo === 'carrera' && s.carrera && s.carrera.cargo !== 'lider' ? LIDER_INICIAL : s.config.lider;
+  const o = opositorDe(s, pid);
+  if (o) return o.perfil.lider;
+  return (s.lideres && s.lideres[pid]) || '';
+}
+
+// Datos de un partido listos para mostrar. Los de los jugadores llevan su nombre, color y emblema.
 function partidoInfo(s, pid) {
-  const P = PARTIDOS[pid], jugador = pid === ID_JUGADOR;
-  if (!jugador || !s.config.propio) return { ...P, jugador };
-  return { ...P, jugador, nombre: s.config.partido, siglas: siglasDe(s.config.partido), color: s.config.color, emblema: s.config.emblema, afinidad: afinidadDe(s, pid) };
+  const P = PARTIDOS[pid], jugador = pid === ID_JUGADOR, lider = liderDe(s, pid);
+  const o = opositorDe(s, pid);
+  if (o) {
+    const c = o.perfil;
+    return c.propio ? { ...P, humano: true, lider, nombre: c.partido, siglas: siglasDe(c.partido), color: c.color, emblema: c.emblema, afinidad: afinidadDe(s, pid) }
+      : { ...P, humano: true, lider };
+  }
+  if (!s || !jugador || !s.config.propio) return { ...P, jugador, lider };
+  return { ...P, jugador, lider, nombre: s.config.partido, siglas: siglasDe(s.config.partido), color: s.config.color, emblema: s.config.emblema, afinidad: afinidadDe(s, pid) };
 }
 
 const mediaBase = base => Object.keys(GRUPOS).reduce((a, g) => a + GRUPOS[g].peso * base[g], 0);
 
-// Tirón de tu partido en cada grupo cuando su apoyo es 50. Depende de sus principios (si es tuyo)
-// o de la base del partido al que te has unido, ajustado para que la media sea siempre 33.
-function basePropia(s) {
-  const m = {};
+// Tirón de un partido en cada grupo cuando su apoyo es 50. Los creados por jugadores, según sus
+// principios; el del gobierno, ajustado para que la media sea siempre 33.
+function baseDe(s, pid) {
+  const principios = principiosDe(s, pid), m = {};
   for (const g in GRUPOS) {
-    if (s.config.propio) m[g] = Math.max(0.2, 1 + s.config.principios.reduce((a, t) => a + (PRINCIPIOS[t].grupos[g] || 0), 0));
-    else m[g] = PARTIDOS[ID_JUGADOR].base[g];
+    m[g] = principios ? Math.max(0.2, 1 + principios.reduce((a, t) => a + (PRINCIPIOS[t].grupos[g] || 0), 0)) : PARTIDOS[pid].base[g];
   }
-  const k = 33 / mediaBase(m);
-  for (const g in GRUPOS) m[g] *= k;
+  if (principios || pid === ID_JUGADOR) {
+    const k = 33 / mediaBase(m);
+    for (const g in GRUPOS) m[g] *= k;
+  }
   return m;
 }
+const basePropia = s => baseDe(s, ID_JUGADOR);
 
 // ---------- Gabinete ----------
 
@@ -586,8 +624,11 @@ function intencionVoto(s, prop) {
     let d;
     if (pid === ID_JUGADOR) d = { voto: votoPartidoJugador(s, prop), ideologia: 0, relacion: 0, negociado: 0, total: 0 };
     else if (pid === autor) d = { voto: 'si', ideologia: 0, relacion: 0, negociado: 0, total: 0, autor: true };
-    else {
-      const ideologia = ideologiaLey(PARTIDOS[pid].afinidad, ley, prop.derogar);
+    else if (opositorDe(s, pid) && opositorDe(s, pid).postura !== 'ideas' && !opositorDe(s, autor)) {
+      // Un jugador de la oposición puede apoyar o bloquear todo lo que presente el gobierno.
+      d = { ideologia: 0, relacion: 0, negociado: 0, total: 0, voto: opositorDe(s, pid).postura === 'apoyar' ? 'si' : 'no', postura: true };
+    } else {
+      const ideologia = ideologiaLey(afinidadDe(s, pid), ley, prop.derogar);
       const relacion = tuya ? Math.round(relacionPartido(s, pid) / 40 * 10) / 10 : 0;
       const negociado = (tuya && prop.negociado[pid]) || 0;
       const total = ideologia + relacion + negociado;
@@ -635,6 +676,17 @@ function resolverVotacion(s, prop) {
   const autor = prop.autor || ID_JUGADOR, tuya = autor === ID_JUGADOR;
   for (const pid in PARTIDOS) votos[pid] = r.partidos[pid].voto;
   const que = `${prop.derogar ? 'derogar' : 'aprobar'} «${ley.nombre}»`;
+  const opo = opositorDe(s, autor);
+  if (opo) {
+    const quien = partidoInfo(s, autor).nombre;
+    if (r.aprueba) {
+      s.leyes[ley.id] = !prop.derogar;
+      s.ultimaLey = { mes: s.mes, id: ley.id, derogar: prop.derogar, si: r.si, no: r.no };
+    }
+    noticia(s, r.aprueba ? `La oposición (${quien}) consigue ${que} por ${r.si} votos a ${r.no}.` : `${quien} no consigue ${que}.`, r.aprueba ? 'mal' : '');
+    s.resultadoVoto = { ley: ley.id, derogar: prop.derogar, autor, si: r.si, no: r.no, abs: r.abs, aprueba: r.aprueba, votos, escanos: { ...s.escanos } };
+    return;
+  }
   if (r.aprueba) {
     s.leyes[ley.id] = !prop.derogar;
     s.ultimaLey = { mes: s.mes, id: ley.id, derogar: prop.derogar, si: r.si, no: r.no };
@@ -660,6 +712,9 @@ function repartoPorGrupo(s, conAzar) {
   const reparto = {}, mia = basePropia(s);
   // Si te has unido a un partido que no es el de centro, el centro hereda una base plana equivalente.
   const centro = mediaBase(PARTIDOS[ID_JUGADOR].base);
+  // Los partidos de jugadores de la oposición: su base, multiplicada por la imagen que se han ganado.
+  const opos = {};
+  for (const o of s.oposicion || []) opos[o.partido] = { o, base: o.perfil.propio ? baseDe(s, o.partido) : PARTIDOS[o.partido].base };
   for (const g in GRUPOS) {
     const pesos = {};
     let suma = 0;
@@ -667,6 +722,7 @@ function repartoPorGrupo(s, conAzar) {
       // Tu partido crece con el apoyo del grupo; los demás tienen su base fija,
       // y el rival que gobierna suma la ventaja de estar en el poder.
       if (pid === ID_JUGADOR) pesos[pid] = mia[g] * Math.pow(s.grupos[g] / 50, 1.5);
+      else if (opos[pid]) pesos[pid] = opos[pid].base[g] * Math.max(0.3, 1 + (opos[pid].o.imagen[g] || 0) / 40) * (conAzar ? 0.9 + Math.random() * 0.2 : 1);
       else {
         const base = pid === 'uc' ? centro : PARTIDOS[pid].base[g];
         pesos[pid] = base * (conAzar ? 0.9 + Math.random() * 0.2 : 1) * (pid === s.gobiernoIA ? s.carrera.fuerzaGobierno : 1);
@@ -708,10 +764,23 @@ const ganaJugador = escanos => Object.keys(escanos).every(pid => escanos[ID_JUGA
 
 function celebrarElecciones(s) {
   if (s.modo === 'carrera') return eleccionesCarrera(s);
-  const escanos = estimarVotos(s, true), gana = ganaJugador(escanos);
+  const escanos = estimarVotos(s, true);
+  // En un país compartido gobierna el partido de jugador con más escaños; nadie queda fuera.
+  const compartido = s.oposicion && s.oposicion.length;
+  const ganador = compartido ? [ID_JUGADOR, ...s.oposicion.map(o => o.partido)].reduce((a, b) => (escanos[b] > escanos[a] ? b : a)) : null;
+  const gana = compartido ? true : ganaJugador(escanos);
   s.elecciones = { antes: { ...s.escanos }, escanos, gana };
   s.escanos = escanos;
   s.propuesta = null;
+  if (compartido && ganador !== ID_JUGADOR) {
+    const nuevo = opositorDe(s, ganador).perfil.lider;
+    const sale = cambiarGobierno(s, opositorDe(s, ganador));
+    s.elecciones.relevo = { sale, entra: nuevo };
+    s.legislatura++;
+    s.inicioLegislatura = s.mes;
+    s.proximaEleccion += MESES_LEGISLATURA;
+    return;
+  }
   if (gana) {
     s.legislatura++;
     s.cuenta.elecciones++;
@@ -888,6 +957,7 @@ function textoEvento(s, ev, texto) {
     provincia: ev.provincia && PROV_POR_ID[ev.provincia] ? PROV_POR_ID[ev.provincia].nombre : '',
     mipais: PAIS_JUGADOR.nombre,
     ministro,
+    lider: LIDER_INICIAL,
   };
   return texto.replace(/\{(\w+)\}/g, (_, k) => datos[k] || '');
 }
@@ -1028,6 +1098,7 @@ function avanzarMesTodas(estados) {
     usarNacion(s);
     if (s.modo === 'carrera') mesCarreraAntes(s);
     else { mesNacionAntes(s); turnoGuerra(s); }
+    mesOposicion(s);
   }
   if (activas.length) simularMundo(activas);
   for (const s of activas) {

@@ -32,6 +32,7 @@ function vistaMundo() {
     PAIS_JUGADOR.colores = tonosPais(c.colorPais);
     generarMundo(c.semilla, c.tamano);
     ui.vistaClave = clave;
+    ui.salaMundo = null;
   }
   const [x, y, w, h] = GEO.viewBox;
   let formas = '', rotulos = '';
@@ -200,6 +201,8 @@ function htmlOpciones() {
     <div class="op-fila ${opciones.sonido ? '' : 'apagada'}"><span>Volumen</span>
       <input type="range" id="op-volumen" min="0" max="100" step="5" value="${Math.round(opciones.volumen * 100)}" aria-label="Volumen" ${opciones.sonido ? '' : 'disabled'}></div>
     ${interruptor('asesora', 'Consejos de la asesora')}
+    ${interruptor('avisos', 'Avisos emergentes')}
+    ${interruptor('rotulos', 'Nombres de provincias en el mapa')}
     <div class="op-partida">
       ${enJuego && enRed() ? `<button class="btn" data-a="salirMenu">${ico('casa')} ${soyAnfitrion() ? 'Cerrar la sala y salir (se guarda para reanudarla)' : 'Salir de la partida'}</button>`
       : enJuego ? `<button class="btn" data-a="salirMenu">${ico('casa')} Guardar y salir al menú</button>

@@ -33,10 +33,11 @@ const LEGISLATURAS = { 18: 'Corta: 18 meses', 24: 'Normal: 24 meses', 36: 'Larga
 
 // Tamaños de mapa. propias: tus provincias. paises: cuántos países más hay (mínimo y máximo).
 // islas: cuántos de ellos viven en islas. provPais: provincias de cada país del continente.
+// provLibre: lo mismo en multijugador, donde cada jugador elige uno de esos países (son algo más grandes).
 const TAMANOS = {
-  pequeno: { nombre: 'Pequeño', desc: '7 provincias tuyas y 5 países', propias: 7, paises: [5, 5], islas: 1, provPais: [3, 4] },
-  mediano: { nombre: 'Mediano', desc: '9 provincias tuyas y 10 países', propias: 9, paises: [10, 10], islas: 2, provPais: [2, 4] },
-  grande: { nombre: 'Grande', desc: '11 provincias tuyas y de 15 a 20 países', propias: 11, paises: [15, 20], islas: 3, provPais: [2, 3] },
+  pequeno: { nombre: 'Pequeño', desc: '7 provincias tuyas y 5 países', propias: 7, paises: [5, 5], islas: 1, provPais: [3, 4], provLibre: [5, 7] },
+  mediano: { nombre: 'Mediano', desc: '9 provincias tuyas y 10 países', propias: 9, paises: [10, 10], islas: 2, provPais: [2, 4], provLibre: [4, 6] },
+  grande: { nombre: 'Grande', desc: '11 provincias tuyas y de 15 a 20 países', propias: 11, paises: [15, 20], islas: 3, provPais: [2, 3], provLibre: [3, 5] },
 };
 const COLORES_PAIS = ['#dba94a', '#bfcf63', '#e79fb6', '#63c7b8', '#eda35a'];
 
@@ -449,7 +450,10 @@ const OBJETIVOS = [
 
 // ---------- Carrera política ----------
 
-const LIDER_INICIAL = 'Marta Solís';
+// Quien dirige tu partido al empezar la carrera. Cambia en cada partida (lo fija usarNacion).
+let LIDER_INICIAL = 'Marta Solís';
+const NOMBRES_LIDERES = ['Marta Solís', 'Julia Ortiz', 'Ramón Aguirre', 'Carmen Llorente', 'Pablo Ferrán', 'Inés Robles', 'Víctor Salgado', 'Elena Cuesta',
+  'Jorge Barrios', 'Lucía Montes', 'Andrés Pizarro', 'Nuria Serrano', 'Óscar Lamas', 'Beatriz Ocaña', 'Hugo Tejedor', 'Sara Villalba', 'Diego Navarro', 'Alba Quiroga'];
 const MES_CONGRESO = 10;
 const MAX_PROMESAS = 3;
 
@@ -470,7 +474,7 @@ const ACCIONES_CARRERA = [
 const EVENTOS_CARRERA = [
   {
     id: 'c_lealtad', icono: 'megafono', fase: 'diputado', titulo: 'La dirección te pide lealtad',
-    texto: `${LIDER_INICIAL} quiere que defiendas en televisión una postura del partido que no gusta a nadie.`,
+    texto: '{lider} quiere que defiendas en televisión una postura del partido que no gusta a nadie.',
     opciones: [
       { texto: 'Dar la cara por el partido', efectos: { interno: 6, prestigio: -3 } },
       { texto: 'Negarte con buenas palabras', efectos: { interno: -5, prestigio: 4 } },
@@ -542,7 +546,7 @@ const EVENTOS_CARRERA = [
     ],
   },
   {
-    id: 'c_tropiezo', icono: 'megafono', fase: 'diputado', titulo: `${LIDER_INICIAL} tropieza`,
+    id: 'c_tropiezo', icono: 'megafono', fase: 'diputado', titulo: '{lider} tropieza',
     texto: 'La líder confunde dos cifras en un debate y todo el país se ríe.',
     opciones: [
       { texto: 'Salir en su defensa', efectos: { interno: 4, apoyoLider: -2 } },
@@ -571,7 +575,7 @@ const OBJETIVOS_CARRERA = [
   { id: 'c_pleno', texto: 'Interviene en el pleno', premio: { cp: 1 }, hecho: s => s.cuenta.plenos >= 1 },
   { id: 'c_prestigio', texto: 'Alcanza 30 de prestigio', premio: { fondos: 40 }, hecho: s => s.carrera.prestigio >= 30 },
   { id: 'c_ley', texto: 'Lleva una ley a votación', premio: { interno: 3 }, hecho: s => s.cuenta.propuestas >= 1 },
-  { id: 'c_supera', texto: `Supera en apoyo a ${LIDER_INICIAL}`, premio: { prestigio: 3 }, hecho: s => esLider(s) || apoyoCongreso(s) > s.carrera.apoyoLider },
+  { id: 'c_supera', texto: 'Supera en apoyo a quien dirige tu partido', premio: { prestigio: 3 }, hecho: s => esLider(s) || apoyoCongreso(s) > s.carrera.apoyoLider },
   { id: 'c_lider', texto: 'Gana el congreso del partido', premio: { cp: 3 }, hecho: s => esLider(s) },
   { id: 'c_promesas', texto: 'Haz tres promesas electorales', premio: { prestigio: 4 }, hecho: s => s.carrera.promesas.length >= MAX_PROMESAS },
   { id: 'c_primero', texto: 'Ponte primero en las encuestas', premio: { fondos: 80 }, hecho: s => ganaJugador(estimarVotos(s, false)) },

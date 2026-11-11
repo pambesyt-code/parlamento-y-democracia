@@ -262,9 +262,26 @@ const STATS = {
   ],
 };
 
+// La cabecera de quien está en la oposición de un país compartido.
+STATS.oposicion = [
+  statFecha,
+  { k: 'escanos', nombre: 'Tus escaños', icono: 'parlamento', tip: 'Los que tiene hoy tu partido en el parlamento', valor: s => s.escanos[miOpositor().partido], tab: 'parlamento' },
+  {
+    k: 'encuesta', nombre: 'Encuesta', icono: 'grafica', tip: 'Escaños que sacaría hoy tu partido', valor: s => estimarVotos(s, false)[miOpositor().partido],
+    delta: s => [`el gobierno, ${estimarVotos(s, false)[ID_JUGADOR]}`, ''], tab: 'oposicion',
+  },
+  { k: 'cp', nombre: 'Capital político', icono: 'estrella', tip: 'Se gasta en campañas y leyes. Recuperas 2 cada mes.', valor: () => miOpositor().cp, fmt: n => `${n}/${CP_MAXIMO}`, delta: () => ['+2 al mes', ''] },
+  { k: 'elecciones', nombre: 'Elecciones', icono: 'urna', tip: 'Si sacas más escaños que el gobierno, gobiernas tú', texto: s => `en ${plural(faltanElecciones(s), 'mes', 'meses')}`, tab: 'oposicion' },
+];
+// Al pulsar una cifra de la cabecera se abre la pestaña donde se explica.
+const TAB_DE_CIFRA = { dinero: 'economia', popularidad: 'sociedad', estabilidad: 'sociedad', influencia: 'diplomacia', elecciones: 'parlamento', prestigio: 'carrera', interno: 'partido', fondos: 'carrera', cita: 'carrera' };
+
 function construirCabecera(modo) {
-  $('#stats').innerHTML = STATS[modo].map(s => `<div class="stat" id="st-${s.k}" title="${s.tip}">
-    ${ico(s.icono)}<span class="k">${s.nombre}</span><span class="v"></span><span class="d"></span></div>`).join('');
+  $('#stats').innerHTML = STATS[modo].map(s => {
+    const tab = s.tab || TAB_DE_CIFRA[s.k];
+    return `<div class="stat ${tab ? 'pulsable' : ''}" id="st-${s.k}" title="${s.tip}${tab ? '. Pulsa para ver el detalle.' : ''}" ${tab ? `data-a="tab" data-v="${tab}"` : ''}>
+    ${ico(s.icono)}<span class="k">${s.nombre}</span><span class="v"></span><span class="d"></span></div>`;
+  }).join('');
   $('#btn-opciones').innerHTML = ico('engranaje');
   $('#btn-mes').innerHTML = `Siguiente mes ${ico('play')}`;
   ui.statsModo = modo;
@@ -272,12 +289,13 @@ function construirCabecera(modo) {
 }
 
 function renderCabecera() {
-  const s = estado, P = partidoInfo(s, ID_JUGADOR);
-  if (ui.statsModo !== s.modo) construirCabecera(s.modo);
-  const cargo = s.modo === 'gobierno' ? 'Gobierno de' : esLider(s) ? 'Lidera' : 'Diputado:';
-  ponerHTML($('#marca'), `${logoPartido(P)}<div><b>${esc(P.nombre)}</b><span>${cargo} ${esc(s.config.lider)}</span></div>`);
+  const s = estado, oposicion = esOposicion(), clave = oposicion ? 'oposicion' : s.modo;
+  const P = partidoInfo(s, oposicion ? miOpositor().partido : ID_JUGADOR);
+  if (ui.statsModo !== clave) construirCabecera(clave);
+  const cargo = oposicion ? 'Oposición:' : s.modo === 'gobierno' ? 'Gobierno de' : esLider(s) ? 'Lidera' : 'Diputado:';
+  ponerHTML($('#marca'), `${logoPartido(P)}<div><b>${esc(P.nombre)}</b><span>${cargo} ${esc(oposicion ? miOpositor().perfil.lider : s.config.lider)}</span></div>`);
 
-  for (const st of STATS[s.modo]) {
+  for (const st of STATS[clave]) {
     const caja = $('#st-' + st.k), el = $('.v', caja);
     if (st.texto) el.textContent = st.texto(s);
     else {
@@ -318,7 +336,7 @@ const TABS_CARRERA = {
   carrera: ['Carrera', 'usuario'], partido: ['Partido', 'bandera'], parlamento: ['Parlamento', 'parlamento'],
   sociedad: ['Votantes', 'gente'], provincia: ['Mapa', 'mapa'],
 };
-const tabsActuales = () => (estado && estado.modo === 'carrera' ? TABS_CARRERA : TABS_GOBIERNO);
+const tabsActuales = () => (esOposicion() ? TABS_OPOSICION : estado && estado.modo === 'carrera' ? TABS_CARRERA : TABS_GOBIERNO);
 
 function renderTabs() {
   const s = estado, tabs = tabsActuales();
@@ -426,6 +444,7 @@ function tabEconomia() {
     ${flujo('pico', 'Materias primas', e.matProd, e.capacidad, `${e.matProd} producidas, las fábricas admiten ${e.capacidad}`, e.matProd < e.capacidad)}
     ${flujo('fabrica', 'Bienes', e.usadas, e.capacidad, `${e.usadas} fabricados de ${e.capacidad} posibles`, false)}
     ${mods.length ? `<div class="chips">${mods.join('')}</div>` : ''}
+    ${htmlInversiones()}
     <h3>Nivel de impuestos</h3>
     <p class="nota">Cambiarlo cuesta 1 de capital político. Cada opción dice lo que ganarías o perderías frente a hoy.</p>
     <div class="niveles">${Object.keys(NIVELES_IMPUESTOS).map(n => {
@@ -474,7 +493,7 @@ function tabParlamento() {
     <div class="leyenda">${ORDEN_HEMICICLO.map(pid => {
       const P = partidoInfo(s, pid), rel = P.jugador ? 0 : relacionPartido(s, pid);
       const gobierna = carrera ? pid === s.gobiernoIA : P.jugador;
-      return `<div>${logoPartido(P, 'mini')}<b>${esc(P.nombre)}</b><span>${s.escanos[pid]} escaños</span>${gobierna ? chip('gobierna') : ''}
+      return `<div>${logoPartido(P, 'mini')}<b>${esc(P.nombre)}</b><small class="lider">${esc(P.lider)}</small><span>${s.escanos[pid]} escaños</span>${gobierna ? chip('gobierna') : ''}${P.humano ? chip('jugador', 'pos') : ''}
         ${P.jugador ? '<span class="cuenta">tu partido</span>' : `<span class="cuenta ${clase(rel)}">relación ${signo(rel) || '0'}</span>`}</div>`;
     }).join('')}</div>
     <div class="encuesta"><div class="tarjeta-cab"><b>Encuesta</b><span class="cuenta">si hoy hubiera elecciones</span></div>
@@ -503,11 +522,12 @@ function tabParlamento() {
         const P = partidoInfo(s, pid), d = r.partidos[pid];
         const porque = P.jugador
           ? (d.voto === 'si' ? 'Tu partido respalda la propuesta' : `La dirección no te respalda: te hacen falta ${APOYO_PARA_RESPALDO} de apoyo en el partido`)
+          : d.postura ? `Lo dirige otro jugador, ${esc(P.lider)}, y ${d.voto === 'si' ? 'apoya' : 'bloquea'} todo lo del gobierno`
           : `Ideología ${signo(d.ideologia) || '0'}, relación ${signo(d.relacion) || '0'}${d.negociado ? `, negociado +${d.negociado}` : ''}`;
         return `<div class="voto">${logoPartido(P, 'mini')}
           <div class="voto-txt"><b>${esc(P.siglas)}</b> ${s.escanos[pid]} escaños<small>${porque}</small></div>
           <div class="voto-der"><span class="intencion ${d.voto}">${votoTxt[d.voto]}</span>
-          ${P.jugador ? '' : boton(`Negociar ${ico('estrella')}1`, { a: 'negociar', partido: pid }, puedeNegociar(s, pid), 'mini')}</div>
+          ${P.jugador || d.postura ? '' : boton(`Negociar ${ico('estrella')}1`, { a: 'negociar', partido: pid }, puedeNegociar(s, pid), 'mini')}</div>
         </div>`;
       }).join('')}
       <p class="recuento">A favor <b>${r.si}</b>, en contra <b>${r.no}</b>, abstención <b>${r.abs}</b>.
@@ -652,7 +672,9 @@ function renderContenido() {
   const vistas = {
     provincia: carrera ? tabMapaElectoral : tabProvincia, economia: tabEconomia, parlamento: tabParlamento, gobierno: tabGobierno,
     diplomacia: tabDiplomacia, defensa: tabDefensa, sociedad: tabSociedad, carrera: tabCarrera, partido: tabPartido,
+    oposicion: tabOposicion,
   };
+  if (esOposicion()) vistas.parlamento = tabParlamentoOposicion;
   const cont = $('#contenido');
   ponerHTML(cont, vistas[ui.tab]());
   if (ui.animTab) {
@@ -666,11 +688,13 @@ function renderContenido() {
 // ---------- Bajo el mapa: asesora, objetivos y prensa ----------
 
 function renderLateral() {
-  const s = estado, c = opciones.asesora ? consejo(s) : null;
+  const s = estado, oposicion = esOposicion(), c = opciones.asesora && !oposicion ? consejo(s) : null;
   ponerHTML($('#asesora'), c ? `${ico('bombilla')}<p><b>Tu asesora:</b> ${c.texto}</p>
     <button class="btn mini" data-a="tab" data-v="${c.tab}">Ir a ${tabsActuales()[c.tab][0]}</button>` : '');
   $('#asesora').hidden = !c;
 
+  // Los objetivos son de quien gobierna: en la oposición no se muestran.
+  $('#objetivos').hidden = oposicion;
   const lista = objetivosActuales(s), pendientes = lista.filter(o => !s.objetivos[o.id]), hechos = lista.length - pendientes.length;
   ponerHTML($('#objetivos'), `<h3>${ico('diana')} Objetivos <span class="cuenta">${hechos} de ${lista.length}</span></h3>
     <ul class="objetivos">${pendientes.slice(0, 5).map(o => `<li><span>${o.texto}</span><span class="chips">${chipsEfectos(o.premio)}</span></li>`).join('')
@@ -684,15 +708,55 @@ function renderLateral() {
       const cab = n.mes !== ultimo ? `<div class="noticia-mes">${fecha(n.mes)}</div>` : '';
       ultimo = n.mes;
       return `${cab}<div class="noticia ${n.tipo}">${esc(n.texto)}</div>`;
-    }).join('')}</div>`);
+    }).join('')}</div>
+    ${s.noticias.length > 12 ? `<button class="btn mini claro" data-a="abrir" data-v="noticias">${ico('periodico')} Ver todas las noticias (${s.noticias.length})</button>` : ''}`);
+}
+
+// Todas las noticias guardadas, por meses.
+function htmlNoticias() {
+  let ultimo = -1;
+  return `<h2>${ico('periodico')} Noticias</h2>
+    <div class="noticias-todas">${estado.noticias.map(n => {
+      const cab = n.mes !== ultimo ? `<div class="noticia-mes">${fecha(n.mes)}</div>` : '';
+      ultimo = n.mes;
+      return `${cab}<div class="noticia ${n.tipo}">${esc(n.texto)}</div>`;
+    }).join('')}</div>
+    <button class="btn principal" data-a="cerrar">Cerrar</button>`;
+}
+
+// Las construcciones que antes se pagan solas, con la economía de hoy (sin contar si te llega el dinero).
+function mejoresInversiones(s) {
+  const base = calcularEconomia(s).balance, lista = [];
+  for (const p of provinciasLibres(s)) {
+    for (const k in EDIFICIOS) {
+      const r = puedeConstruir(s, p.id, k);
+      if (!r.ok && r.motivo !== 'No hay dinero suficiente') continue;
+      s.edificios[p.id][k]++;
+      const d = calcularEconomia(s).balance - base;
+      s.edificios[p.id][k]--;
+      if (d > 0) lista.push({ prov: p, tipo: k, dinero: d, meses: Math.ceil(costeEdificio(s, k) / d) });
+    }
+  }
+  return lista.sort((a, b) => a.meses - b.meses).slice(0, 3);
+}
+
+function htmlInversiones() {
+  const lista = mejoresInversiones(estado);
+  if (!lista.length) return '';
+  return `<h3>${ico('bombilla')} Mejores inversiones ahora</h3>
+    ${lista.map(x => `<div class="fila inversion"><span>${ico(EDIFICIOS[x.tipo].icono)} ${EDIFICIOS[x.tipo].nombre} en ${x.prov.nombre}</span>
+      <b class="pos">${signo(x.dinero)} al mes</b><small>se paga en ${plural(x.meses, 'mes', 'meses')}</small>
+      <button class="btn mini" data-a="prov" data-prov="${x.prov.id}">Ir</button></div>`).join('')}`;
 }
 
 // ---------- Ventanas ----------
 
 function htmlVoto() {
-  const v = estado.resultadoVoto, ley = LEY_POR_ID[v.ley];
+  const v = votoEnPantalla(), ley = LEY_POR_ID[v.ley];
   const txt = { si: 'A favor', no: 'En contra', abs: 'Abstención' };
-  const autor = v.autor && v.autor !== ID_JUGADOR ? `<p class="nota">Ley del gobierno de ${nombrePartido(v.autor)}.</p>` : '';
+  const autor = !v.autor || v.autor === ID_JUGADOR ? ''
+    : opositorDe(estado, v.autor) ? `<p class="nota">Ley presentada por ${nombrePartido(v.autor)}, desde la oposición.</p>`
+      : `<p class="nota">Ley del gobierno de ${nombrePartido(v.autor)}.</p>`;
   return `<h2>${v.derogar ? 'Derogar: ' : ''}${ley.nombre}</h2>${autor}
     <div class="voto-escena">${hemicicloSVG(v.escanos)}
       <div id="sello" class="sello ${v.aprueba ? 'si' : 'no'}">${v.aprueba ? (v.derogar ? 'Derogada' : 'Aprobada') : 'Rechazada'}</div></div>
@@ -708,7 +772,9 @@ function htmlVoto() {
 }
 
 function revelarPartido(pid, cuenta, conAnim) {
-  const v = estado.resultadoVoto, voto = v.votos[pid];
+  const v = votoEnPantalla();
+  if (!v) return;
+  const voto = v.votos[pid];
   $$(`#modal .esc[data-p="${pid}"]`).forEach((c, i) => {
     c.style.transitionDelay = conAnim ? `${i * 14}ms` : '0ms';
     c.classList.add('v-' + voto);
@@ -721,7 +787,7 @@ function revelarPartido(pid, cuenta, conAnim) {
 }
 
 function finVotacion() {
-  const v = estado && estado.resultadoVoto;
+  const v = votoEnPantalla();
   if (!v || ui.animVoto === 'hecha') return;
   ui.timers.forEach(clearTimeout);
   ui.timers = [];
@@ -761,7 +827,8 @@ function htmlElecciones() {
         <b>${e.antes[pid]}</b><small class="${clase(dif)}">${signo(dif) || '='}</small></div>`;
     }).join('')}</div>
     ${e.carrera ? veredictoCarrera(e, orden[0]) : `<p id="veredicto" class="veredicto ${e.gana ? 'pos' : 'neg'}">${e.gana
-      ? `${nombrePartido(ID_JUGADOR)} es la fuerza con más escaños. Sigues al frente del gobierno.`
+      ? (e.relevo ? `${esc(e.relevo.entra)} gana con ${nombrePartido(ID_JUGADOR)} y forma gobierno. ${esc(e.relevo.sale)} pasa a la oposición.`
+        : `${nombrePartido(ID_JUGADOR)} es la fuerza con más escaños. Sigues al frente del gobierno.`)
       : `${nombrePartido(orden[0])} te ha superado. Pasas a la oposición y la partida termina.`}</p>
     ${e.gana ? '<button class="btn principal" data-a="cerrarElecciones">Empezar la legislatura</button>' : botonesFin()}`}`;
 }
@@ -840,8 +907,15 @@ function renderModal() {
   else if (ui.ventana === 'ayuda') [tipo, html] = ['ayuda', htmlAyuda(false)];
   else if (ui.ventana === 'multi') [tipo, html] = ['multi', htmlMulti()];
   else if (ui.ventana === 'confirmar') [tipo, html] = ['confirmar', htmlConfirmar()];
+  else if (enJuego && ui.ventana === 'noticias') [tipo, html] = ['noticias', htmlNoticias()];
+  else if (enJuego && esOposicion()) {
+    // En la oposición solo hay tus votaciones, el final de la partida y la bienvenida.
+    if (votoEnPantalla()) [tipo, html] = ['voto', htmlVoto()];
+    else if (s.fin) [tipo, html] = ['fin', htmlFin()];
+    else if (ui.ventana === 'intro') [tipo, html] = ['intro', htmlIntroOposicion()];
+  }
   else if (enJuego && ui.ventana && ui.ventana.startsWith('guerra:')) [tipo, html] = ['declarar', htmlDeclarar(ui.ventana.slice(7))];
-  else if (enJuego) {
+  else if (enJuego && !esOposicion()) {
     // Los partes de batalla y las votaciones van antes que nada: lo que venga después puede ser un final.
     if (s.batallas.length) [tipo, html] = ['batalla', htmlBatalla()];
     else if (s.resultadoVoto) [tipo, html] = ['voto', htmlVoto()];
@@ -892,6 +966,7 @@ function render() {
     if (enRed()) avisosDeRed();
     document.documentElement.style.setProperty('--alto-cab', $('.cabecera').offsetHeight + 'px');
   }
+  renderChat();
   renderModal();
 }
 
@@ -901,7 +976,7 @@ function entrarJuego() {
   Object.assign(ui, {
     pantalla: 'juego', ventana: null, tab: carrera ? 'carrera' : 'provincia', animTab: true, prov: null, pais: null,
     modoMapa: carrera ? 'electoral' : 'politico', filtroLey: 'todas', cartera: null, previo: {}, pips: null,
-    animVoto: '', animElec: '', timers: [], objetivo: null, mapaVersion: -1, vista: null, filtroPais: 'cerca', ultimo: null,
+    animVoto: '', animElec: '', timers: [], objetivo: null, mapaVersion: -1, vista: null, filtroPais: 'cerca', ultimo: null, salaMundo: null,
   });
   scrollTo(0, 0);
 }
@@ -959,6 +1034,15 @@ const acciones = {
   reanudarSala: () => { const g = salaGuardada(); if (g) crearSala(g); },
   unirse: () => { ui.codigoSala = ($('#codigo-sala') || {}).value || ui.codigoSala || ''; unirseASala(ui.codigoSala); },
   salaCfg: d => { if (soyAnfitrion()) cambiarConfigSala(d.k, d.v); },
+  elegirPais: d => {
+    ui.cfg.nacion = d.v;
+    // Si nadie gobierna aún ese país, lo llamas como quieras; por defecto, con su nombre de siempre.
+    const grupo = jugadoresPorPais((RED.sala || { jugadores: [] }).jugadores.filter(j => j.token !== miToken()))[d.v];
+    if (!grupo) ui.cfg.pais = NACIONES[d.v].nombre;
+  },
+  abrirChat: () => { ui.chatAbierto = !ui.chatAbierto; },
+  pausa: () => alternarPausa(),
+  pasarYa: () => { if (soyAnfitrion()) avanzarMes(); },
   otroMapaSala: () => { if (soyAnfitrion()) cambiarConfigSala('semilla', semillaAlAzar()); },
   empezarSala: () => { if (soyAnfitrion()) empezarPartida(); },
   salirSala: () => { cerrarRed(); salirAlMenu(); },
@@ -981,7 +1065,7 @@ const acciones = {
   },
   provTodas: () => { ui.prov = null; },
   modoMapa: d => { ui.modoMapa = d.v; },
-  zoom: d => { if (d.v === 'mas') zoomMapa(1 / 1.4); else if (d.v === 'menos') zoomMapa(1.4); else ajustarVista(GEO.viewBox); },
+  zoom: d => { if (d.v === 'mas') zoomMapa(1 / 1.4); else if (d.v === 'menos') zoomMapa(1.4); else if (d.v === 'mio') verMiPais(); else ajustarVista(GEO.viewBox); },
   filtroPais: d => { ui.filtroPais = d.v; },
   filtroLey: d => { ui.filtroLey = d.v; },
   abrirCartera: d => { ui.cartera = d.v || null; },
@@ -997,7 +1081,18 @@ const acciones = {
   retirar: () => jugar('retirar'),
   negociar: d => jugar('negociar', d),
   votar: () => jugar('votar'),
-  cerrarVoto: () => { jugar('cerrarVoto'); ui.animVoto = ''; },
+  cerrarVoto: () => {
+    // Se oculta ya, sin esperar al anfitrión, para que un mensaje en vuelo no lo vuelva a abrir.
+    ui.votoOculto = claveVoto(votoEnPantalla());
+    ui.timers.forEach(clearTimeout);
+    jugar(esOposicion() ? 'oposCerrarVoto' : 'cerrarVoto');
+    ui.animVoto = '';
+  },
+  oposMitin: d => jugar('oposMitin', d),
+  oposCampana: () => jugar('oposCampana'),
+  oposDenunciar: () => jugar('oposDenunciar'),
+  oposPostura: d => jugar('oposPostura', d),
+  oposProponer: d => jugar('oposProponer', d),
   nombrar: d => { jugar('nombrar', d); ui.cartera = null; },
   destituir: d => jugar('destituir', d),
   diplo: d => jugar('diplo', d),
@@ -1044,7 +1139,7 @@ document.addEventListener('click', ev => {
   // En multijugador lo que pasa en la partida llega del anfitrión: los avisos se sacan al recibirlo.
   if (enRed() || ui.pantalla === 'sala') {
     acciones[nombre](el.dataset);
-    if (ui.pantalla === 'sala' && (nombre === 'cfg' || nombre === 'cfgPrincipio')) enviarPerfil();
+    if (ui.pantalla === 'sala' && (nombre === 'cfg' || nombre === 'cfgPrincipio' || nombre === 'elegirPais')) enviarPerfil();
     render();
     return;
   }
@@ -1094,11 +1189,31 @@ document.addEventListener('change', ev => {
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Enter' && ev.target.id === 'codigo-sala') { acciones.unirse(); return; }
   if (ev.key === 'Escape' && ui.ventana && ui.ventana !== 'intro') { ui.ventana = null; render(); return; }
+  if (ev.key === '?' && !/INPUT|TEXTAREA/.test(ev.target.tagName)) { ui.ventana = 'ayuda'; render(); return; }
   if (ui.pantalla !== 'juego' || !$('#modal').hidden || /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
   if (ev.key === ' ' && ev.target.tagName !== 'BUTTON') { ev.preventDefault(); $('#btn-mes').click(); return; }
   const tab = ev.key.length === 1 ? Object.keys(tabsActuales())['1234567'.indexOf(ev.key)] : null;
   if (tab) { ui.tab = tab; ui.animTab = true; render(); }
 });
+
+// El chat se escribe en un formulario fijo, para no perder lo escrito cuando llegan cambios.
+document.addEventListener('submit', ev => {
+  if (ev.target.id !== 'chat-form') return;
+  ev.preventDefault();
+  const campo = $('#chat-texto');
+  enviarChat(campo.value);
+  campo.value = '';
+});
+
+// Encuadra el mapa en tu país.
+function verMiPais() {
+  const ps = provinciasJugador().map(p => GEO.provs[p.id]);
+  if (!ps.length) return;
+  const xs = ps.map(p => p.cx), ys = ps.map(p => p.cy), m = 70, [, , bw, bh] = GEO.viewBox;
+  const x0 = Math.min(...xs) - m, x1 = Math.max(...xs) + m, y0 = Math.min(...ys) - m, y1 = Math.max(...ys) + m;
+  const k = Math.max((x1 - x0) / bw, (y1 - y0) / bh), w = bw * k, h = bh * k;
+  ajustarVista([(x0 + x1) / 2 - w / 2, (y0 + y1) / 2 - h / 2, w, h]);
+}
 
 aplicarOpciones();
 prepararTooltip();

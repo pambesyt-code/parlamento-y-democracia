@@ -37,6 +37,7 @@
           <div id="mapa-zoom" role="group" aria-label="Zoom del mapa">
             <button data-a="zoom" data-v="mas" aria-label="Acercar" title="Acercar (también con la rueda del ratón)"><svg class="ico" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M10.5 7.5v6M7.5 10.5h6"/></svg></button>
             <button data-a="zoom" data-v="menos" aria-label="Alejar" title="Alejar"><svg class="ico" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M7.5 10.5h6"/></svg></button>
+            <button data-a="zoom" data-v="mio" aria-label="Ver mi país" title="Ver mi país"><svg class="ico" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5.5h4V20"/></svg></button>
             <button data-a="zoom" data-v="todo" aria-label="Ver el mapa entero" title="Ver el mapa entero"><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
           </div>
           <svg id="mapa" role="img" aria-label="Mapa de Aldora y sus vecinos"></svg>
@@ -59,6 +60,13 @@
   <div id="modal" hidden></div>
   <div id="avisos" aria-live="polite"></div>
   <div id="tooltip" hidden></div>
+  <div id="chat" hidden>
+    <div id="chat-panel" hidden>
+      <div id="chat-lista" aria-live="polite"></div>
+      <form id="chat-form"><input id="chat-texto" maxlength="240" placeholder="Escribe un mensaje" autocomplete="off" aria-label="Mensaje"><button class="btn mini laton">Enviar</button></form>
+    </div>
+    <button id="chat-boton" data-a="abrirChat"></button>
+  </div>
 
   <!-- PeerJS conecta los navegadores para el multijugador. Sin internet, el modo de un jugador funciona igual. -->
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -68,6 +76,7 @@
   <script src="js/game.js"></script>
   <script src="js/carrera.js"></script>
   <script src="js/guerra.js"></script>
+  <script src="js/oposicion.js"></script>
   <script src="js/acciones.js"></script>
   <script src="js/red.js"></script>
   <script src="js/ui-base.js"></script>
@@ -75,6 +84,7 @@
   <script src="js/ui-carrera.js"></script>
   <script src="js/ui-guerra.js"></script>
   <script src="js/ui-multi.js"></script>
+  <script src="js/ui-oposicion.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>

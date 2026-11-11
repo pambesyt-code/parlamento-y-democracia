@@ -27,7 +27,7 @@ function boton(contenido, datos, poder, cls = '') {
 
 const OPCIONES_GUARDADO = 'pyd-opciones-v1';
 const opciones = {
-  tema: 'claro', sonido: true, volumen: 0.5, texto: 'normal', asesora: true,
+  tema: 'claro', sonido: true, volumen: 0.5, texto: 'normal', asesora: true, avisos: true, rotulos: true,
   animaciones: !matchMedia('(prefers-reduced-motion: reduce)').matches,
 };
 try { Object.assign(opciones, JSON.parse(localStorage.getItem(OPCIONES_GUARDADO)) || {}); } catch (e) { /* sin almacenamiento */ }
@@ -37,6 +37,7 @@ function aplicarOpciones() {
   d.tema = opciones.tema;
   d.anim = opciones.animaciones ? 'si' : 'no';
   d.texto = opciones.texto;
+  d.rotulos = opciones.rotulos ? 'si' : 'no';
   try { localStorage.setItem(OPCIONES_GUARDADO, JSON.stringify(opciones)); } catch (e) { /* sin almacenamiento */ }
 }
 const animar = () => opciones.animaciones;
@@ -120,6 +121,7 @@ function flotar(el, texto, tipo) {
 
 // Aviso breve en la esquina: objetivos cumplidos y noticias importantes.
 function aviso(texto, tipo = '', icono = 'periodico') {
+  if (!opciones.avisos) return;
   const caja = $('#avisos');
   while (caja.children.length >= 4) caja.firstChild.remove();
   const a = document.createElement('div');

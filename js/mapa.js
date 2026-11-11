@@ -337,11 +337,10 @@ function crearPaises(rng, provs, geo, reparto) {
   });
 
   // Las islas, sin contacto por tierra con ningún jugador, usan nombres de navegantes.
-  const conJugador = new Set(reparto.jugadores.map(J => J.capital)), cola = [...conJugador];
-  while (cola.length) for (const v of geo.vecinos[cola.pop()]) if (!conJugador.has(v)) { conJugador.add(v); cola.push(v); }
+  // (Son los países que nacen en un grupo de islas, separado del continente.)
 
   reparto.paises.forEach((R, i) => {
-    const isla = !conJugador.has(R.capital);
+    const isla = porId[R.capital].grupo > 0;
     const pl = (isla && islenas.shift()) || resto.shift() || islenas.shift() || { nombre: `País ${i + 1}`, estilo: 'latino' };
     const car = CARACTERES[Math.floor(rng() * CARACTERES.length)], n = R.provs.length, pid = 'c' + i;
     const color = colores[i % colores.length];
@@ -372,17 +371,18 @@ function crearPaises(rng, provs, geo, reparto) {
 // no se alcanzan por tierra desde su capital.
 function verDesde(pid) {
   for (const k in PAISES) delete PAISES[k];
-  const mia = GEO.masa[NACIONES[pid].capitalProv];
+  // Sin nación activa (la vista previa del multijugador) no hay islas: se ven todos los países.
+  const mia = NACIONES[pid] ? GEO.masa[NACIONES[pid].capitalProv] : null;
   for (const id in NACIONES) {
     if (id === pid) continue;
-    const isla = GEO.masa[NACIONES[id].capitalProv] !== mia;
+    const isla = mia !== null && GEO.masa[NACIONES[id].capitalProv] !== mia;
     PAISES[id] = { ...NACIONES[id], isla, requierePuerto: isla };
   }
 }
 
 // ---------- 5. Provincias: nombre, población y recursos ----------
 
-function darAtributos(rng, provs, geo) {
+function darAtributos(rng, provs, geo, libre) {
   const azarEntre = (a, b) => Math.round((a + rng() * (b - a)) / 10) * 10;
   const propios = { costa: barajar(rng, NOMBRES_PROPIOS.costa), interior: barajar(rng, NOMBRES_PROPIOS.interior) };
   const usados = new Set();
@@ -408,7 +408,8 @@ function darAtributos(rng, provs, geo) {
   }
 
   // Cada jugador tiene al menos dos provincias fértiles y dos con minerales para poder arrancar.
-  const humanos = Object.keys(NACIONES).filter(pid => NACIONES[pid].humano);
+  // Los países que puede llevar un jugador: los suyos o, en el mundo libre del multijugador, todos.
+  const humanos = Object.keys(NACIONES).filter(pid => NACIONES[pid].humano || libre);
   for (const pid of humanos) {
     const propias = provs.filter(p => p.pais === pid && !p.capital);
     for (const rasgo of ['fertil', 'mineral']) {
@@ -439,17 +440,20 @@ function darAtributos(rng, provs, geo) {
 // Crea el mundo de una partida y lo deja en PROVINCIAS, PROV_POR_ID, NACIONES, PAISES y GEO.
 // humanos: cuántas naciones llevan jugadores. Con varios, cada uno tiene 2 provincias menos y hay
 // menos países de la IA, para que todo quepa. Si una semilla da un mapa cojo, prueba la siguiente.
+// humanos = 0 es el mundo libre del multijugador: ningún país reservado, todos se pueden elegir.
 function generarMundo(semilla, tamano, humanos = 1) {
   const T = TAMANOS[tamano] || TAMANOS.mediano;
+  const libre = humanos === 0;
   const propias = humanos > 1 ? T.propias - 2 : T.propias;
   let mundo = null;
   for (let intento = 0; intento < 24 && !mundo; intento++) {
     const estricto = intento < 20;
     const rng = crearAzar((semilla >>> 0) + intento * 7919);
-    const nPaises = Math.max(3, entre(rng, T.paises[0], T.paises[1]) - (humanos - 1));
+    const nPaises = libre ? entre(rng, T.paises[0], T.paises[1]) : Math.max(3, entre(rng, T.paises[0], T.paises[1]) - (humanos - 1));
     const islas = Array.from({ length: Math.min(T.islas, nPaises - 1) }, () => entre(rng, 2, 3));
     let nContinente = propias * humanos;
-    for (let i = 0; i < nPaises - islas.length; i++) nContinente += entre(rng, T.provPais[0], T.provPais[1]);
+    const tam = libre ? T.provLibre : T.provPais;
+    for (let i = 0; i < nPaises - islas.length; i++) nContinente += entre(rng, tam[0], tam[1]);
     const provs = colocarSemillas(rng, nContinente, islas);
     const geo = calcularGeometria(provs);
     if (estricto && !provs.every(p => geo.provs[p.id].celdas > 6)) continue;
@@ -457,10 +461,10 @@ function generarMundo(semilla, tamano, humanos = 1) {
     if (!reparto) continue;
     // Al menos dos tercios de los países pedidos; si no, el mapa ha quedado demasiado apretado.
     if (estricto && reparto.paises.length < Math.ceil(nPaises * 2 / 3)) continue;
-    mundo = { rng, provs, geo, reparto };
+    mundo = { rng, provs, geo, reparto, libre };
   }
   crearPaises(mundo.rng, mundo.provs, mundo.geo, mundo.reparto);
-  darAtributos(mundo.rng, mundo.provs, mundo.geo);
+  darAtributos(mundo.rng, mundo.provs, mundo.geo, mundo.libre);
   PROVINCIAS = mundo.provs;
   PROV_POR_ID = Object.fromEntries(PROVINCIAS.map(p => [p.id, p]));
   GEO = mundo.geo;
@@ -476,6 +480,6 @@ function generarMundo(semilla, tamano, humanos = 1) {
   }
   recalcularFronteras();
   // Hasta que se active una nación, el mundo se ve desde la del primer jugador.
-  PAIS_JUGADOR.id = idHumano(0);
-  verDesde(idHumano(0));
+  PAIS_JUGADOR.id = libre ? null : idHumano(0);
+  verDesde(PAIS_JUGADOR.id);
 }

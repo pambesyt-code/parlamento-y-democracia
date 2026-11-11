@@ -11,7 +11,9 @@
 
 const PREFIJO_SALA = 'parlamento-diplomacia-';
 const LETRAS_CODIGO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const MAX_JUGADORES = { pequeno: 3, mediano: 4, grande: 6 };
+const MAX_JUGADORES = { pequeno: 4, mediano: 6, grande: 8 };
+const MAX_POR_PAIS = 4;   // uno por partido del parlamento
+const MAX_CHAT = 60;
 const GUARDADO_MULTI = 'pyd-multi-v1';
 
 const RED = {
@@ -42,7 +44,7 @@ function miToken() {
 const codigoAlAzar = () => Array.from({ length: 5 }, () => LETRAS_CODIGO[Math.floor(Math.random() * LETRAS_CODIGO.length)]).join('');
 const perfilDe = c => ({
   lider: c.lider, propio: c.propio, partidoId: c.partidoId, partido: c.partido, color: c.color, emblema: c.emblema,
-  principios: [...c.principios], pais: c.pais, colorPais: c.colorPais,
+  principios: [...c.principios], pais: c.pais, colorPais: c.colorPais, nacion: c.nacion || null,
 });
 
 function errorRed(texto) {
@@ -114,7 +116,7 @@ function alRecibirAnfitrion(conn, m) {
     if (!j && sala.empezada && m.perfil) {
       const nombre = String(m.perfil.lider || '').trim().toLowerCase();
       j = sala.jugadores.find(x => !x.conectado && x.token !== sala.owner && x.perfil.lider.trim().toLowerCase() === nombre);
-      if (j) j.token = m.token;
+      if (j) cambiarToken(j, m.token);
     }
     if (!j) {
       if (sala.empezada) return conn.send({ t: 'error', texto: 'La partida ya ha empezado y no tienes país en ella.' });
@@ -131,39 +133,110 @@ function alRecibirAnfitrion(conn, m) {
   if (m.t === 'perfil' && !sala.empezada) { j.perfil = m.perfil; difundir(); }
   if (m.t === 'accion' && sala.empezada) aplicarAccion(j, m.a, m.d || {});
   if (m.t === 'listo' && sala.empezada) { j.listo = !!m.v; comprobarTurno(); }
+  if (m.t === 'chat') anotarChat(j, m.texto);
+}
+
+// Un jugador que vuelve con otro identificador conserva su sitio: en la sala y en su país.
+function cambiarToken(j, nuevo) {
+  const viejo = j.token;
+  j.token = nuevo;
+  for (const s of Object.values(ESTADOS)) {
+    if (s.tokenGobierno === viejo) s.tokenGobierno = nuevo;
+    for (const o of s.oposicion || []) if (o.token === viejo) o.token = nuevo;
+  }
+  if (RED.sala.owner === viejo) RED.sala.owner = nuevo;
+}
+
+function anotarChat(j, texto) {
+  texto = String(texto || '').trim().slice(0, 240);
+  if (!texto) return;
+  const sala = RED.sala;
+  sala.chat = [...(sala.chat || []), { de: j.perfil.lider, color: j.perfil.colorPais, texto, hora: Date.now() }].slice(-MAX_CHAT);
+  difundir();
+}
+
+// El anfitrión puede parar el reloj (por ejemplo, para hablar algo) y reanudarlo después.
+function alternarPausa() {
+  const sala = RED.sala;
+  if (!soyAnfitrion() || !sala.empezada) return;
+  if (sala.pausada) {
+    sala.pausada = false;
+    sala.limite = Date.now() + sala.restantePausa;
+    clearTimeout(RED.temporizador);
+    RED.temporizador = setTimeout(avanzarMes, sala.restantePausa);
+  } else {
+    sala.pausada = true;
+    sala.restantePausa = Math.max(1000, sala.limite - Date.now());
+    clearTimeout(RED.temporizador);
+  }
+  difundir();
 }
 
 function cambiarConfigSala(k, v) {
   const c = RED.sala.config;
   c[k] = k === 'legislatura' || k === 'minutos' || k === 'semilla' ? +v : v;
+  // Con otro mapa los países son otros: cada jugador vuelve a elegir.
+  if (k === 'tamano' || k === 'semilla') {
+    for (const j of RED.sala.jugadores) j.perfil.nacion = null;
+    ui.cfg.nacion = null;
+  }
   difundir();
 }
 
-function puedeEmpezar() {
-  const s = RED.sala;
-  if (s.jugadores.length > MAX_JUGADORES[s.config.tamano]) return { ok: false, motivo: `En un mapa ${TAMANOS[s.config.tamano].nombre.toLowerCase()} caben ${MAX_JUGADORES[s.config.tamano]} jugadores` };
+// Jugadores agrupados por el país que han elegido, en orden de llegada (el primero gobierna).
+function jugadoresPorPais(jugadores) {
+  const grupos = {};
+  for (const j of jugadores) if (j.perfil.nacion) (grupos[j.perfil.nacion] = grupos[j.perfil.nacion] || []).push(j);
+  return grupos;
+}
+
+// Lo que impide empezar, contado para que el anfitrión sepa qué falta.
+function puedeEmpezar(sala = RED.sala) {
+  const max = MAX_JUGADORES[sala.config.tamano];
+  if (sala.jugadores.length > max) return { ok: false, motivo: `En un mundo ${TAMANOS[sala.config.tamano].nombre.toLowerCase()} caben ${max} jugadores` };
+  const sinPais = sala.jugadores.find(j => !j.perfil.nacion);
+  if (sinPais) return { ok: false, motivo: `${sinPais.perfil.lider} aún no ha elegido país en el mapa` };
+  const grupos = jugadoresPorPais(sala.jugadores);
+  for (const pid in grupos) {
+    const huecos = grupos[pid].map(j => huecoPartido(j.perfil));
+    if (grupos[pid].length > MAX_POR_PAIS) return { ok: false, motivo: `En un mismo país caben ${MAX_POR_PAIS} jugadores` };
+    if (new Set(huecos).size !== huecos.length) {
+      return { ok: false, motivo: `${grupos[pid].map(j => j.perfil.lider).join(' y ')} están en el mismo país con el mismo partido (o los dos con uno propio): uno debe cambiarlo` };
+    }
+  }
   return { ok: true };
 }
 
-// Crea el mundo y una nación para cada jugador. Si dos han elegido el mismo color, el segundo recibe otro.
+// Crea el mundo y una nación por cada país elegido. En cada país gobierna quien lo eligió primero
+// y el resto forma la oposición. Si dos gobiernos han elegido el mismo color, el segundo recibe otro.
 function empezarPartida() {
   const sala = RED.sala;
   if (!puedeEmpezar().ok) return;
-  const usados = new Set();
-  for (const j of sala.jugadores) {
-    if (usados.has(j.perfil.colorPais)) j.perfil.colorPais = COLORES_PAIS.find(c => !usados.has(c)) || j.perfil.colorPais;
-    usados.add(j.perfil.colorPais);
+  const grupos = jugadoresPorPais(sala.jugadores), usados = new Set();
+  for (const pid in grupos) {
+    const p = grupos[pid][0].perfil;
+    if (usados.has(p.colorPais)) p.colorPais = COLORES_PAIS.find(c => !usados.has(c)) || p.colorPais;
+    usados.add(p.colorPais);
   }
   for (const k in ESTADOS) delete ESTADOS[k];
-  prepararMundo(sala.config, sala.jugadores.length);
-  const cfgs = sala.jugadores.map((j, i) => {
-    j.nacion = idHumano(i);
-    const cfg = completarConfig({ ...sala.config, ...j.perfil });
-    registrarHumano(j.nacion, cfg);
-    return cfg;
-  });
+  prepararMundo(sala.config, 0);
+  const cfgs = {};
+  for (const pid in grupos) {
+    const gob = grupos[pid][0];
+    // Un país compartido empieza siempre gobernado: la carrera es para quien juega solo en su país.
+    cfgs[pid] = completarConfig({ ...sala.config, ...gob.perfil, nacion: pid, modo: grupos[pid].length > 1 ? 'gobierno' : sala.config.modo });
+    registrarHumano(pid, cfgs[pid]);
+    for (const j of grupos[pid]) j.nacion = pid;
+  }
   const comun = crearComun();
-  sala.jugadores.forEach((j, i) => crearNacion(cfgs[i], j.nacion, comun));
+  for (const pid in grupos) {
+    const s = crearNacion(cfgs[pid], pid, comun);
+    s.tokenGobierno = grupos[pid][0].token;
+    s.oposicion = grupos[pid].slice(1).map(j => crearOpositor(j.token, j.perfil));
+    usarNacion(s);
+    relacionesIniciales(s);
+    s.escanos = estimarVotos(s, false);
+  }
   sincronizarNaciones(ESTADOS);
   sala.empezada = true;
   sala.mes = 0;
@@ -178,13 +251,16 @@ const miNacion = () => {
 };
 const nacionDelJugador = j => (j && j.nacion ? ESTADOS[j.nacion] : null);
 
-// Aplica una acción de un jugador a su nación y lo cuenta a todos.
+// Aplica una acción de un jugador a su nación y lo cuenta a todos. Quien gobierna usa las reglas
+// normales; quien está en la oposición de un país compartido, solo las suyas.
 function aplicarAccion(j, a, d) {
   const s = nacionDelJugador(j);
-  if (!s || s.fin || !REGLAS[a] || a === 'mes') return;
+  if (!s || s.fin || a === 'mes') return;
+  const gobierna = !s.tokenGobierno || s.tokenGobierno === j.token, o = opositorPorToken(s, j.token);
+  if (gobierna ? !REGLAS[a] : !(o && REGLAS_OPOSICION[a])) return;
   try {
     usarNacion(s);
-    REGLAS[a](s, d);
+    if (gobierna) REGLAS[a](s, d); else REGLAS_OPOSICION[a](s, o, d);
     sincronizarNaciones(ESTADOS);
   } catch (e) {
     console.error('Error al aplicar', a, e);
@@ -209,6 +285,7 @@ function jugadoresActivos() {
 function nuevoTurno() {
   const sala = RED.sala, ms = sala.config.minutos * 60000;
   for (const j of sala.jugadores) j.listo = false;
+  sala.pausada = false;
   sala.limite = Date.now() + ms;
   clearTimeout(RED.temporizador);
   RED.temporizador = setTimeout(avanzarMes, ms);
@@ -235,14 +312,14 @@ function avanzarMes() {
 // Lo que los invitados necesitan de los demás jugadores para pintarlos: nombre, color y bandera de su país.
 function datosHumanos() {
   const h = {};
-  for (const j of RED.sala.jugadores) if (j.nacion) h[j.nacion] = completarConfig({ ...RED.sala.config, ...j.perfil });
+  for (const pid in ESTADOS) h[pid] = ESTADOS[pid].config;
   return h;
 }
 
 function salaPublica() {
   const s = RED.sala;
   return {
-    codigo: s.codigo, owner: s.owner, empezada: s.empezada, config: s.config, mes: s.mes || 0,
+    codigo: s.codigo, owner: s.owner, empezada: s.empezada, config: s.config, mes: s.mes || 0, pausada: !!s.pausada, chat: s.chat || [],
     jugadores: s.jugadores.map(j => ({ token: j.token, perfil: j.perfil, conectado: j.conectado, nacion: j.nacion, listo: j.listo,
       fin: nacionDelJugador(j) ? nacionDelJugador(j).fin : null })),
   };
@@ -251,7 +328,9 @@ function salaPublica() {
 // Envía a cada invitado la sala y, si la partida ha empezado, su nación. Luego repinta la pantalla propia.
 function difundir() {
   if (!soyAnfitrion()) return;
-  const sala = salaPublica(), restante = Math.max(0, (RED.sala.limite || 0) - Date.now()), humanos = sala.empezada ? datosHumanos() : null;
+  const sala = salaPublica(), humanos = sala.empezada ? datosHumanos() : null;
+  const restante = RED.sala.pausada ? RED.sala.restantePausa : Math.max(0, (RED.sala.limite || 0) - Date.now());
+  RED.recibido = Date.now();
   RED.finTurno = Date.now() + restante;
   for (const j of RED.sala.jugadores) {
     const conn = RED.conexiones[j.token];
@@ -276,16 +355,18 @@ function borrarSalaGuardada() { try { localStorage.removeItem(GUARDADO_MULTI); }
 // Al guardar, lo compartido se copió una vez por nación: aquí vuelven a ser los mismos objetos.
 function reanudarSala(g) {
   RED.sala = g.sala;
-  for (const j of RED.sala.jugadores) j.conectado = j.token === miToken();
-  RED.sala.owner = miToken();
   const lista = Object.values(g.estados), comun = lista[0];
-  prepararMundo(RED.sala.config, RED.sala.jugadores.length, comun.duenos);
+  prepararMundo(RED.sala.config, 0, comun.duenos);
   for (const k in ESTADOS) delete ESTADOS[k];
-  for (const j of RED.sala.jugadores) registrarHumano(j.nacion, completarConfig({ ...RED.sala.config, ...j.perfil }));
   for (const s of lista) {
     Object.assign(s, { mundo: comun.mundo, duenos: comun.duenos, ocupadas: comun.ocupadas });
     ESTADOS[s.nacion] = s;
+    registrarHumano(s.nacion, s.config);
   }
+  // Quien reanuda es el dueño de la sala aunque su navegador le haya dado otro identificador.
+  const dueno = RED.sala.jugadores.find(j => j.token === RED.sala.owner);
+  if (dueno && dueno.token !== miToken()) cambiarToken(dueno, miToken());
+  for (const j of RED.sala.jugadores) j.conectado = j.token === miToken();
   for (const s of lista) enlazarNacion(s);
   sincronizarNaciones(ESTADOS);
   nuevoTurno();
@@ -333,6 +414,11 @@ function alRecibirInvitado(m) {
   if (m.t === 'error') { cerrarRed(); salirAlMenu('multi'); return errorRed(m.texto); }
   if (m.t === 'sala') {
     RED.sala = m.sala;
+    RED.recibido = Date.now();
+    // Si el anfitrión cambia de mapa, la elección de país se borra para todos.
+    const clave = `${m.sala.config.semilla}|${m.sala.config.tamano}`;
+    if (RED.claveMapa && RED.claveMapa !== clave) ui.cfg.nacion = null;
+    RED.claveMapa = clave;
     RED.finTurno = Date.now() + (m.restante || 0);
     RED.estado = '';
     if (!m.sala.empezada && ui.pantalla !== 'sala') ui.pantalla = 'sala';
@@ -346,7 +432,7 @@ function recibirNacion(s, humanos) {
   const primera = !estado || ui.pantalla !== 'juego' || estado.nacion !== s.nacion;
   if (primera) {
     for (const k in ESTADOS) delete ESTADOS[k];
-    prepararMundo(RED.sala.config, Object.keys(humanos).length, s.duenos);
+    prepararMundo(RED.sala.config, 0, s.duenos);
     for (const pid in humanos) registrarHumano(pid, humanos[pid]);
   } else {
     for (const pid in humanos) registrarHumano(pid, humanos[pid]);
@@ -371,6 +457,13 @@ function enviarAccion(a, d) {
   } else if (RED.conexion && RED.conexion.open) RED.conexion.send({ t: 'accion', token: miToken(), a, d });
 }
 
+function enviarChat(texto) {
+  texto = String(texto || '').trim();
+  if (!texto) return;
+  if (soyAnfitrion()) anotarChat(yoEnSala(), texto);
+  else if (RED.conexion && RED.conexion.open) RED.conexion.send({ t: 'chat', token: miToken(), texto });
+}
+
 function enviarPerfil() {
   const perfil = perfilDe(ui.cfg);
   if (soyAnfitrion()) {
@@ -392,7 +485,8 @@ function infoTurno() {
   const sala = RED.sala;
   if (!sala || !sala.empezada) return null;
   const activos = sala.jugadores.filter(j => j.conectado && j.nacion && !j.fin);
-  return { listos: activos.filter(j => j.listo).length, total: activos.length, restante: Math.max(0, RED.finTurno - Date.now()) };
+  return { listos: activos.filter(j => j.listo).length, total: activos.length, pausada: !!sala.pausada,
+    restante: sala.pausada ? Math.max(0, RED.finTurno - RED.recibido) : Math.max(0, RED.finTurno - Date.now()) };
 }
 
 function cerrarRed() {

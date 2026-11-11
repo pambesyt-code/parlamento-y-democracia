@@ -79,17 +79,69 @@ function htmlSalaIzquierda() {
     <div class="botones-paso">${empezar}</div>`;
 }
 
+// El mundo de la sala, generado con la configuración del anfitrión, para elegir país en él.
+function mundoSala() {
+  const c = RED.sala.config, clave = `${c.semilla}|${c.tamano}`;
+  if (ui.salaMundo !== clave) {
+    generarMundo(c.semilla, c.tamano, 0);
+    ui.salaMundo = clave;
+    ui.vistaClave = null;
+  }
+}
+
+// Mapa de la sala: cada país con el color de quien lo gobierna (si alguien lo ha elegido) y sus jugadores.
+function htmlMapaSala() {
+  mundoSala();
+  const grupos = jugadoresPorPais(RED.sala.jugadores), mio = ui.cfg.nacion, [x, y, w, h] = GEO.viewBox;
+  let formas = '', rotulos = '';
+  for (const p of PROVINCIAS) {
+    const g = grupos[p.pais], col = g ? g[0].perfil.colorPais : NACIONES[p.pais].color;
+    formas += `<path class="prov-sala ${g ? 'elegido' : ''}" d="${GEO.provs[p.id].d}" fill="${col}" stroke="${col}" data-a="elegirPais" data-v="${p.pais}"><title>${esc(NACIONES[p.pais].nombre)}: pulsa para elegirlo</title></path>`;
+  }
+  for (const pid in GEO.paises) {
+    const g = GEO.paises[pid], grupo = grupos[pid];
+    const nombre = grupo ? grupo[0].perfil.pais : NACIONES[pid].nombre;
+    rotulos += `<text class="lbl-pais ${grupo ? 'propio' : ''}" x="${g.cx}" y="${g.cy}">${esc(nombre.toUpperCase())}</text>`;
+    if (grupo) rotulos += `<text class="lbl-jugadores" x="${g.cx}" y="${g.cy + 16}">${esc(grupo.map(j => j.perfil.lider).join(', '))}</text>`;
+  }
+  const sel = mio && GEO.paises[mio] ? `<path class="f-sel" d="${GEO.paises[mio].contorno}"/>` : '';
+  const P = mio && NACIONES[mio];
+  return `<svg class="vista-mundo mapa-sala" viewBox="${x} ${y} ${w} ${h}" role="img" aria-label="Mapa para elegir país">
+      <rect class="vm-mar" x="${x}" y="${y}" width="${w}" height="${h}" rx="10"/>${formas}
+      <path class="f-prov" d="${GEO.fronteraProv}"/><path class="f-costa" d="${GEO.costa}"/><path class="f-pais" d="${GEO.fronteraPais}"/>${sel}${rotulos}</svg>
+    <p class="vista-pie">${P ? `Has elegido ${esc(P.nombre)}: ${plural(provinciasDe(mio).length, 'provincia', 'provincias')}, ${P.gobierno.toLowerCase()}.`
+      : `Pulsa un país del mapa para elegirlo. Hay ${Object.keys(NACIONES).length} y varios jugadores pueden compartir uno.`}</p>`;
+}
+
+// Qué te va a tocar en el país que has elegido: gobernarlo o hacer oposición.
+function situacionEnPais() {
+  const mio = ui.cfg.nacion;
+  if (!mio) return '';
+  const otros = jugadoresPorPais(RED.sala.jugadores.filter(j => j.token !== miToken()))[mio] || [];
+  const yo = RED.sala.jugadores.findIndex(j => j.token === miToken());
+  const antes = otros.filter(j => RED.sala.jugadores.indexOf(j) < yo);
+  const choque = otros.find(j => huecoPartido(j.perfil) === huecoPartido(ui.cfg));
+  if (choque) return `<p class="error-red">${esc(choque.perfil.lider)} ya está en este país con ${ui.cfg.propio ? 'un partido propio' : 'ese partido'}. Elige otro partido para poder empezar.</p>`;
+  if (!antes.length) return `<p class="aviso-red">${ico('corona')} Gobernarás tú este país${otros.length ? `. ${esc(otros.map(j => j.perfil.lider).join(' y '))} hará${otros.length > 1 ? 'n' : ''} oposición` : ''}.</p>`;
+  return `<p class="aviso-red">${ico('parlamento')} Gobierna ${esc(antes[0].perfil.lider)}: tú serás la oposición, con tu propio partido. Si ganas unas elecciones, pasas a gobernar.</p>`;
+}
+
 function htmlSalaPerfil() {
-  const c = ui.cfg;
+  const c = ui.cfg, mio = c.nacion, otros = mio ? jugadoresPorPais(RED.sala.jugadores.filter(j => j.token !== miToken()))[mio] : null;
+  const yo = RED.sala.jugadores.findIndex(j => j.token === miToken());
+  const gobernare = mio && !(otros || []).some(j => RED.sala.jugadores.indexOf(j) < yo);
   return `<div class="perfil-sala">
+    <h2 class="menu-h2">Elige país</h2>
+    ${htmlMapaSala()}
+    ${situacionEnPais()}
     <h2 class="menu-h2">Tu personaje</h2>
     <label class="campo"><span>Tu nombre</span><input id="cfg-lider" maxlength="24" value="${esc(c.lider)}" autocomplete="off"></label>
     ${pasoPartido(c)}
-    <label class="campo"><span>Nombre de tu país</span><input id="cfg-pais" maxlength="18" value="${esc(c.pais)}" autocomplete="off"></label>
+    ${gobernare ? `<label class="campo"><span>Nombre de tu país</span><input id="cfg-pais" maxlength="18" value="${esc(c.pais)}" autocomplete="off"></label>
     <div class="campo"><span>Color de tu país en el mapa</span><div class="opciones-fila">
       ${COLORES_PAIS.map(col => `<button class="muestra ${col === c.colorPais ? 'activa' : ''}" data-a="cfg" data-k="colorPais" data-v="${col}" style="background:${col}" aria-label="Color ${col}" aria-pressed="${col === c.colorPais}"></button>`).join('')}
-    </div></div>
-    <p class="campo-nota">Los cambios llegan a los demás al momento. Si dos elegís el mismo color de país, al empezar se le cambia a uno.</p>
+    </div></div>` : mio ? '<p class="campo-nota">El nombre y el color del país los elige quien lo gobierna.</p>' : ''}
+    <p class="campo-nota">Los cambios llegan a los demás al momento.</p>
   </div>`;
 }
 
@@ -136,24 +188,51 @@ function renderTurno() {
   b.classList.toggle('esperando', listo);
   ponerHTML(b, listo ? `Esperando ${t.listos}/${t.total} ${ico('reloj')}` : `Listo ${t.listos}/${t.total} ${ico('check')}`);
   b.title = listo ? 'Pulsa para dejar de estar listo' : 'Cuando todos estén listos, pasa el mes';
-  b.disabled = !!estado.fin || (!listo && hayAlgoPendiente(estado));
+  b.disabled = !!estado.fin || (!listo && !esOposicion() && hayAlgoPendiente(estado));
   actualizarReloj();
   lista.hidden = false;
+  const controles = soyAnfitrion() ? `<div class="botones">
+      <button class="btn mini claro" data-a="pausa">${ico(t.pausada ? 'play' : 'reloj')} ${t.pausada ? 'Reanudar el reloj' : 'Pausar el reloj'}</button>
+      <button class="btn mini claro" data-a="pasarYa">${ico('flecha')} Pasar el mes ya</button></div>` : '';
   ponerHTML(lista, `<h3>${ico('gente')} Jugadores <span class="cuenta">${t.listos} de ${t.total} listos</span></h3>
     <ul class="jugadores-partida">${RED.sala.jugadores.map(j => {
-      const P = j.nacion === estado.nacion ? { nombre: PAIS_JUGADOR.nombre, color: PAIS_JUGADOR.colores[0] } : (PAISES[j.nacion] || {});
+      const mismo = j.nacion === estado.nacion;
+      const P = mismo ? { nombre: PAIS_JUGADOR.nombre, color: PAIS_JUGADOR.colores[0] } : (PAISES[j.nacion] || {});
       const situacion = j.fin ? chip(j.fin === 'victoria' ? 'ha ganado' : 'eliminado', j.fin === 'victoria' ? 'pos' : 'neg')
         : !j.conectado ? chip('desconectado', 'neg') : j.listo ? chip('listo', 'pos') : chip('pensando');
+      // De los demás países se ve su tamaño y su ejército; de tu país, si gobierna o hace oposición.
+      const detalle = mismo ? (estado.tokenGobierno === j.token ? 'gobierna' : 'oposición')
+        : j.nacion ? `${provinciasDe(j.nacion).length} prov., ejército ${estado.paises[j.nacion] ? estado.paises[j.nacion].ejercito : '?'}` : '';
       return `<li><i class="punto-color" style="background:${P.color || '#999'}"></i><b>${esc(j.perfil.lider)}</b>
-        <span>${esc(P.nombre || j.perfil.pais)}</span>${situacion}</li>`;
-    }).join('')}</ul>`);
+        <span>${esc(P.nombre || j.perfil.pais)}${detalle ? ` · ${detalle}` : ''}</span>${situacion}</li>`;
+    }).join('')}</ul>${controles}`);
+}
+
+// Chat de la sala: un botón fijo abajo a la derecha que abre los mensajes.
+function renderChat() {
+  const caja = $('#chat'), sala = RED.sala, visible = enRed() && !!sala;
+  caja.hidden = !visible;
+  if (!visible) return;
+  const mensajes = sala.chat || [];
+  if (ui.chatAbierto) ui.chatVistos = mensajes.length;
+  const nuevos = mensajes.length - (ui.chatVistos || 0);
+  ponerHTML($('#chat-boton'), `${ico('charla')} Chat${nuevos > 0 ? ` <b class="chat-nuevos">${nuevos}</b>` : ''}`);
+  $('#chat-panel').hidden = !ui.chatAbierto;
+  const listaChat = $('#chat-lista');
+  const cambio = ponerHTML(listaChat, mensajes.length ? mensajes.map(m => `<p><b style="color:${m.color}">${esc(m.de)}</b> ${esc(m.texto)}</p>`).join('')
+    : '<p class="nota">Aún no hay mensajes. Saluda, pacta o amenaza.</p>');
+  if (cambio) listaChat.scrollTop = listaChat.scrollHeight;
+  if (nuevos > 0 && !ui.chatAbierto && ui.chatAvisados !== mensajes.length) {
+    ui.chatAvisados = mensajes.length;
+    Sonido.tocar('pestana');
+  }
 }
 
 function actualizarReloj() {
   const t = enRed() ? infoTurno() : null, caja = $('#turno');
   if (!t || !caja) return;
-  ponerHTML(caja, `${ico('reloj')}<span>${reloj(t.restante)}</span>`);
-  caja.classList.toggle('urgente', t.restante < 30000);
+  ponerHTML(caja, `${ico('reloj')}<span>${t.pausada ? 'En pausa' : reloj(t.restante)}</span>`);
+  caja.classList.toggle('urgente', !t.pausada && t.restante < 30000);
   caja.title = `Mes ${fecha(estado ? estado.mes : 0)}: quedan ${reloj(t.restante)} para que pase solo`;
 }
 setInterval(() => { if (enRed() && ui.pantalla === 'juego') actualizarReloj(); }, 1000);
