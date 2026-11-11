@@ -36,7 +36,7 @@ function configSala(c, anfitrion) {
     const fila = (k, v) => `<div class="fila-sala"><span>${k}</span><b>${v}</b></div>`;
     return `${fila('Cómo se empieza', MODOS_JUEGO[c.modo].nombre)}${fila('Dificultad', DIFICULTADES[c.dificultad].nombre)}
       ${fila('Mapa', `${TAMANOS[c.tamano].nombre}, número ${c.semilla}`)}${fila('Elecciones', `cada ${c.legislatura} meses`)}
-      ${fila('Tiempo por mes', plural(c.minutos, 'minuto', 'minutos'))}`;
+      ${fila('Partidos por país', c.nPartidos || 5)}${fila('Tiempo por mes', plural(c.minutos, 'minuto', 'minutos'))}`;
   }
   const segmento = (k, valores, actual) => `<div class="segmento oscuro">${valores.map(([v, t]) =>
     `<button class="${String(actual) === String(v) ? 'activa' : ''}" data-a="salaCfg" data-k="${k}" data-v="${v}" aria-pressed="${String(actual) === String(v)}">${t}</button>`).join('')}</div>`;
@@ -44,6 +44,7 @@ function configSala(c, anfitrion) {
     <div class="campo"><span>Dificultad</span>${botonesSala('dificultad', DIFICULTADES, c.dificultad)}</div>
     <div class="campo"><span>Tamaño del mundo</span>${botonesSala('tamano', TAMANOS, c.tamano)}</div>
     <div class="campo"><span>Mapa número ${c.semilla}</span><button class="btn claro" data-a="otroMapaSala">${ico('mapa')} Generar otro</button></div>
+    <div class="campo"><span>Partidos en cada parlamento (más los propios de los jugadores)</span>${segmento('nPartidos', Object.keys(NUM_PARTIDOS).map(n => [n, `${n}`]), c.nPartidos || 5)}</div>
     <div class="campo"><span>Elecciones cada</span>${segmento('legislatura', Object.keys(LEGISLATURAS).map(n => [n, `${n} meses`]), c.legislatura)}</div>
     <div class="campo"><span>Tiempo máximo por mes: si se acaba, el mes pasa aunque falte alguien</span>
       ${segmento('minutos', MINUTOS_TURNO.map(n => [n, `${n} min`]), c.minutos)}</div>`;
@@ -120,8 +121,8 @@ function situacionEnPais() {
   const otros = jugadoresPorPais(RED.sala.jugadores.filter(j => j.token !== miToken()))[mio] || [];
   const yo = RED.sala.jugadores.findIndex(j => j.token === miToken());
   const antes = otros.filter(j => RED.sala.jugadores.indexOf(j) < yo);
-  const choque = otros.find(j => huecoPartido(j.perfil) === huecoPartido(ui.cfg));
-  if (choque) return `<p class="error-red">${esc(choque.perfil.lider)} ya está en este país con ${ui.cfg.propio ? 'un partido propio' : 'ese partido'}. Elige otro partido para poder empezar.</p>`;
+  const choque = !ui.cfg.propio && otros.find(j => !j.perfil.propio && j.perfil.partidoId === ui.cfg.partidoId);
+  if (choque) return `<p class="error-red">${esc(choque.perfil.lider)} ya está en este país con ${esc(CATALOGO_PARTIDOS[ui.cfg.partidoId].nombre)}. Únete a otro o crea el tuyo para poder empezar.</p>`;
   if (!antes.length) return `<p class="aviso-red">${ico('corona')} Gobernarás tú este país${otros.length ? `. ${esc(otros.map(j => j.perfil.lider).join(' y '))} hará${otros.length > 1 ? 'n' : ''} oposición` : ''}.</p>`;
   return `<p class="aviso-red">${ico('parlamento')} Gobierna ${esc(antes[0].perfil.lider)}: tú serás la oposición, con tu propio partido. Si ganas unas elecciones, pasas a gobernar.</p>`;
 }

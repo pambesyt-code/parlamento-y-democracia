@@ -6,8 +6,8 @@
 
 const opositorDe = (s, pid) => (s && s.oposicion ? s.oposicion.find(o => o.partido === pid) : null) || null;
 const opositorPorToken = (s, token) => (s && s.oposicion ? s.oposicion.find(o => o.token === token) : null) || null;
-// El hueco del partido en el parlamento: uno propio ocupa el de Unión Cívica.
-const huecoPartido = perfil => (perfil.propio ? 'uc' : perfil.partidoId);
+// El hueco del partido en el parlamento (ver huecoDe en game.js).
+const huecoPartido = perfil => huecoDe(perfil);
 
 const POSTURAS = {
   ideas: { nombre: 'Según nuestras ideas', desc: 'Tu grupo vota cada ley según encaje con vuestros principios.' },
@@ -97,7 +97,7 @@ function mesOposicion(s) {
 
 const perfilDeConfig = c => ({
   lider: c.lider, propio: c.propio, partidoId: c.partidoId, partido: c.partido, color: c.color, emblema: c.emblema,
-  principios: [...(c.principios || [])], pais: c.pais, colorPais: c.colorPais, nacion: c.nacion,
+  principios: [...(c.principios || [])], pais: c.pais, colorPais: c.colorPais, nacion: c.nacion, hueco: huecoDe(c),
 });
 
 // Tras unas elecciones que gana un partido de la oposición: su jugador pasa a gobernar y quien
@@ -105,7 +105,7 @@ const perfilDeConfig = c => ({
 function cambiarGobierno(s, o) {
   const antes = { token: s.tokenGobierno, perfil: perfilDeConfig(s.config), cp: s.cp };
   const c = s.config, fijos = { modo: 'gobierno', dificultad: c.dificultad, legislatura: c.legislatura, tamano: c.tamano, semilla: c.semilla, pais: c.pais, colorPais: c.colorPais };
-  s.config = completarConfig({ ...o.perfil, ...fijos });
+  s.config = completarConfig({ ...o.perfil, ...fijos, hueco: o.partido, nPartidos: c.nPartidos });
   s.tokenGobierno = o.token;
   s.cp = o.cp;
   s.oposicion = s.oposicion.filter(x => x !== o);

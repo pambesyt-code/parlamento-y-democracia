@@ -102,8 +102,8 @@ function pasoPartido(c) {
     </div></div>`;
   if (!c.propio) {
     return `${eleccion}<div class="campo"><span>A cuál te unes</span><div class="lista-partidos">
-      ${Object.keys(PARTIDOS).map(pid => {
-        const P = PARTIDOS[pid], ideas = Object.keys(P.afinidad).filter(t => P.afinidad[t] > 0).map(t => ETIQUETAS[t]).join(', ') || 'Centro';
+      ${Object.keys(CATALOGO_PARTIDOS).map(pid => {
+        const P = CATALOGO_PARTIDOS[pid], ideas = Object.keys(P.afinidad).filter(t => P.afinidad[t] > 0).map(t => ETIQUETAS[t]).join(', ') || 'Centro';
         return `<button class="partido-op ${c.partidoId === pid ? 'activa' : ''}" data-a="cfg" data-k="partidoId" data-v="${pid}" aria-pressed="${c.partidoId === pid}">
           ${logoPartido(P)}<span><b>${P.nombre}</b><small>${P.lema}</small><small>Le gustan las leyes de: ${ideas}</small></span></button>`;
       }).join('')}</div></div>`;
@@ -119,7 +119,9 @@ function pasoPartido(c) {
     <label class="campo"><span>Nombre del partido</span><input id="cfg-partido" maxlength="28" value="${esc(c.partido)}" autocomplete="off"></label>
     <div class="campo"><span>Color</span><div class="opciones-fila">
       ${COLORES_PARTIDO.map(col => `<button class="muestra ${col === c.color ? 'activa' : ''}" data-a="cfg" data-k="color" data-v="${col}" style="background:${col}" aria-label="Color ${col}" aria-pressed="${col === c.color}"></button>`).join('')}
-    </div></div>
+      <label class="muestra libre ${COLORES_PARTIDO.includes(c.color) ? '' : 'activa'}" title="Cualquier color" style="background:${COLORES_PARTIDO.includes(c.color) ? 'conic-gradient(#e44,#ee4,#4e4,#4ee,#44e,#e4e,#e44)' : c.color}">
+        <input type="color" id="cfg-color" value="${c.color}" aria-label="Elegir cualquier color"></label>
+    </div><p class="campo-nota">El último cuadro abre la paleta para elegir el color que quieras.</p></div>
     <div class="campo"><span>Emblema</span><div class="opciones-fila">
       ${EMBLEMAS.map(e => `<button class="muestra emblema ${e === c.emblema ? 'activa' : ''}" data-a="cfg" data-k="emblema" data-v="${e}" aria-label="Emblema ${e}" aria-pressed="${e === c.emblema}">${ico(e)}</button>`).join('')}
     </div></div>
@@ -140,6 +142,9 @@ function pasoPais(c) {
       ${COLORES_PAIS.map(col => `<button class="muestra ${col === c.colorPais ? 'activa' : ''}" data-a="cfg" data-k="colorPais" data-v="${col}" style="background:${col}" aria-label="Color ${col}" aria-pressed="${col === c.colorPais}"></button>`).join('')}
     </div></div>
     <div class="campo"><span>Tamaño del mundo</span>${tarjetasOpcion('tamano', TAMANOS, c.tamano)}</div>
+    <div class="campo"><span>Partidos en el parlamento</span><div class="segmento oscuro">
+      ${Object.keys(NUM_PARTIDOS).map(n => `<button class="${+c.nPartidos === +n ? 'activa' : ''}" data-a="cfg" data-k="nPartidos" data-v="${n}" aria-pressed="${+c.nPartidos === +n}">${n} · ${NUM_PARTIDOS[n]}</button>`).join('')}
+    </div><p class="campo-nota">Con más partidos el voto se reparte más y cuesta más ganar.</p></div>
     <div class="campo"><span>Mapa: cada número da un mundo distinto</span><div class="semilla">
       <input id="cfg-semilla" inputmode="numeric" maxlength="7" value="${c.semilla}" aria-label="Número del mapa">
       <button class="btn claro" data-a="otroMapa">${ico('mapa')} Generar otro</button></div></div>`;

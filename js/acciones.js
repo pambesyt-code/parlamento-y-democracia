@@ -38,6 +38,8 @@ const REGLAS = {
   postura: (s, d) => resolverPostura(s, d.v),
   cerrarCongreso: s => { s.congreso = null; },
   formarGobierno: s => formarGobierno(s),
+  cerrarCaida: s => { s.caida = null; },
+  corrupcion: (s, d) => hacerCorrupcion(s, d.v),
 
   // Solo en solitario: en multijugador el mes lo pasa el anfitrión cuando todos están listos.
   mes: s => siguienteMes(s),

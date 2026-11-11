@@ -11,8 +11,8 @@
 
 const PREFIJO_SALA = 'parlamento-diplomacia-';
 const LETRAS_CODIGO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const MAX_JUGADORES = { pequeno: 4, mediano: 6, grande: 8 };
-const MAX_POR_PAIS = 4;   // uno por partido del parlamento
+const MAX_JUGADORES = { pequeno: 8, mediano: 12, grande: 16 };
+const MAX_POR_PAIS = 8;   // cada uno con su partido
 const MAX_CHAT = 60;
 const GUARDADO_MULTI = 'pyd-multi-v1';
 
@@ -58,8 +58,23 @@ function crearPeer(id) {
     errorRed('No se ha podido cargar PeerJS. Comprueba la conexión a internet y recarga la página.');
     return null;
   }
-  return id ? new Peer(id) : new Peer();
+  const opciones = { config: { iceServers: SERVIDORES_ICE }, debug: 0 };
+  return id ? new Peer(id, opciones) : new Peer(opciones);
 }
+
+// Servidores que ayudan a dos navegadores a encontrarse. Los STUN bastan si los dos están en redes
+// normales; cuando uno va por datos móviles o por una red estricta hace falta un TURN, que hace de
+// puente. El de Open Relay es público y gratuito, pero puede ir lento o caerse: si falla a menudo,
+// crea una cuenta gratis en metered.ca y pon aquí tus datos (urls, username, credential).
+const SERVIDORES_ICE = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+    username: 'openrelayproject', credential: 'openrelayproject',
+  },
+];
+const ESPERA_CONEXION = 20000;
 
 // ---------- Anfitrión ----------
 
@@ -79,7 +94,7 @@ function crearSala(guardada) {
     else {
       RED.sala = {
         codigo, owner: miToken(), empezada: false, limite: 0,
-        config: { modo: 'gobierno', dificultad: 'normal', legislatura: 24, tamano: 'mediano', semilla: semillaAlAzar(), minutos: 3 },
+        config: { modo: 'gobierno', dificultad: 'normal', legislatura: 24, tamano: 'mediano', semilla: semillaAlAzar(), minutos: 3, nPartidos: 5 },
         jugadores: [{ token: miToken(), perfil: perfilDe(ui.cfg), conectado: true, nacion: null, listo: false }],
       };
       ui.pantalla = 'sala';
@@ -174,7 +189,7 @@ function alternarPausa() {
 
 function cambiarConfigSala(k, v) {
   const c = RED.sala.config;
-  c[k] = k === 'legislatura' || k === 'minutos' || k === 'semilla' ? +v : v;
+  c[k] = k === 'legislatura' || k === 'minutos' || k === 'semilla' || k === 'nPartidos' ? +v : v;
   // Con otro mapa los países son otros: cada jugador vuelve a elegir.
   if (k === 'tamano' || k === 'semilla') {
     for (const j of RED.sala.jugadores) j.perfil.nacion = null;
@@ -198,10 +213,13 @@ function puedeEmpezar(sala = RED.sala) {
   if (sinPais) return { ok: false, motivo: `${sinPais.perfil.lider} aún no ha elegido país en el mapa` };
   const grupos = jugadoresPorPais(sala.jugadores);
   for (const pid in grupos) {
-    const huecos = grupos[pid].map(j => huecoPartido(j.perfil));
     if (grupos[pid].length > MAX_POR_PAIS) return { ok: false, motivo: `En un mismo país caben ${MAX_POR_PAIS} jugadores` };
-    if (new Set(huecos).size !== huecos.length) {
-      return { ok: false, motivo: `${grupos[pid].map(j => j.perfil.lider).join(' y ')} están en el mismo país con el mismo partido (o los dos con uno propio): uno debe cambiarlo` };
+    // Dos jugadores no pueden unirse al mismo partido del mismo país; partidos propios, todos los que quieran.
+    const unidos = grupos[pid].filter(j => !j.perfil.propio);
+    const repe = unidos.find((j, i) => unidos.findIndex(x => x.perfil.partidoId === j.perfil.partidoId) !== i);
+    if (repe) {
+      const quienes = unidos.filter(j => j.perfil.partidoId === repe.perfil.partidoId).map(j => j.perfil.lider);
+      return { ok: false, motivo: `${quienes.join(' y ')} están en el mismo país y en el mismo partido: uno debe cambiarlo` };
     }
   }
   return { ok: true };
@@ -220,8 +238,17 @@ function empezarPartida() {
   }
   for (const k in ESTADOS) delete ESTADOS[k];
   prepararMundo(sala.config, 0);
-  const cfgs = {};
+  const cfgs = {}, partidos = {};
   for (const pid in grupos) {
+    // El escaño de cada partido: los propios ocupan el de centro si está libre y si no, uno nuevo.
+    const tomados = new Set(grupos[pid].filter(j => !j.perfil.propio).map(j => j.perfil.partidoId));
+    let n = 1;
+    for (const j of grupos[pid]) {
+      j.perfil.hueco = !j.perfil.propio ? j.perfil.partidoId : !tomados.has('uc') ? 'uc' : `j${n++}`;
+      tomados.add(j.perfil.hueco);
+    }
+    const huecos = grupos[pid].map(j => j.perfil.hueco);
+    partidos[pid] = [...elegirPartidos(sala.config.nPartidos, huecos), ...huecos.filter(h => /^j\d/.test(h))];
     const gob = grupos[pid][0];
     // Un país compartido empieza siempre gobernado: la carrera es para quien juega solo en su país.
     cfgs[pid] = completarConfig({ ...sala.config, ...gob.perfil, nacion: pid, modo: grupos[pid].length > 1 ? 'gobierno' : sala.config.modo });
@@ -230,7 +257,7 @@ function empezarPartida() {
   }
   const comun = crearComun();
   for (const pid in grupos) {
-    const s = crearNacion(cfgs[pid], pid, comun);
+    const s = crearNacion(cfgs[pid], pid, comun, partidos[pid]);
     s.tokenGobierno = grupos[pid][0].token;
     s.oposicion = grupos[pid].slice(1).map(j => crearOpositor(j.token, j.perfil));
     usarNacion(s);
@@ -386,10 +413,21 @@ function unirseASala(codigo) {
   const peer = crearPeer();
   if (!peer) return;
   RED.peer = peer;
+  // Si en un rato no se ha abierto el canal, casi siempre es la red: se avisa en vez de esperar para siempre.
+  const espera = setTimeout(() => {
+    if (RED.peer !== peer || RED.rol === 'invitado') return;
+    cerrarRed();
+    errorRed('No se ha podido conectar con la sala. Suele ser la red: prueba con los dos dispositivos en la misma wifi, '
+      + 'o con el móvil en datos y el ordenador en wifi (o al revés). Las redes de empresa, colegio o algunos routers bloquean estas conexiones.');
+  }, ESPERA_CONEXION);
   peer.on('open', () => {
+    RED.estado = 'Sala encontrada. Abriendo la conexión…';
+    render();
     const conn = peer.connect(PREFIJO_SALA + codigo, { reliable: true });
     RED.conexion = conn;
+    conn.on('error', () => { clearTimeout(espera); errorRed('La conexión con la sala ha fallado. Vuelve a intentarlo.'); });
     conn.on('open', () => {
+      clearTimeout(espera);
       RED.rol = 'invitado';
       RED.codigo = codigo;
       conn.send({ t: 'entrar', token: miToken(), perfil: perfilDe(ui.cfg) });
@@ -403,6 +441,7 @@ function unirseASala(codigo) {
     });
   });
   peer.on('error', e => {
+    clearTimeout(espera);
     if (e.type === 'peer-unavailable') errorRed('No hay ninguna sala abierta con ese código.');
     else if (e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error') errorRed('No se puede conectar con el servidor de PeerJS. Comprueba tu conexión a internet.');
     else errorRed(`Error de conexión: ${e.type}`);

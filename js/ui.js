@@ -461,7 +461,8 @@ function tabEconomia() {
     <h3>Evolución del tesoro</h3>${grafica(estado.historial.map(h => h.d))}
     <h3>Préstamos</h3>
     <p class="nota">Recibes 200 al momento y devuelves ${cuotaPrestamo(estado)} al mes durante 24 meses${contarEdificios(estado).banco ? ' (tu banco abarata la cuota)' : ''}. Tienes ${estado.prestamos.length} de 3.</p>
-    ${boton(`${ico('moneda')} Pedir un préstamo`, { a: 'prestamo' }, puedePrestamo(estado))}`;
+    ${boton(`${ico('moneda')} Pedir un préstamo`, { a: 'prestamo' }, puedePrestamo(estado))}
+    ${htmlCorrupcion()}`;
 }
 
 function hemicicloSVG(escanos) {
@@ -675,6 +676,8 @@ function renderContenido() {
     oposicion: tabOposicion,
   };
   if (esOposicion()) vistas.parlamento = tabParlamentoOposicion;
+  // Al pasar del gobierno a la oposición (o al revés) algunas pestañas dejan de existir.
+  if (!tabsActuales()[ui.tab]) ui.tab = Object.keys(tabsActuales())[0];
   const cont = $('#contenido');
   ponerHTML(cont, vistas[ui.tab]());
   if (ui.animTab) {
@@ -829,8 +832,9 @@ function htmlElecciones() {
     ${e.carrera ? veredictoCarrera(e, orden[0]) : `<p id="veredicto" class="veredicto ${e.gana ? 'pos' : 'neg'}">${e.gana
       ? (e.relevo ? `${esc(e.relevo.entra)} gana con ${nombrePartido(ID_JUGADOR)} y forma gobierno. ${esc(e.relevo.sale)} pasa a la oposición.`
         : `${nombrePartido(ID_JUGADOR)} es la fuerza con más escaños. Sigues al frente del gobierno.`)
-      : `${nombrePartido(orden[0])} te ha superado. Pasas a la oposición y la partida termina.`}</p>
-    ${e.gana ? '<button class="btn principal" data-a="cerrarElecciones">Empezar la legislatura</button>' : botonesFin()}`}`;
+      : `${nombrePartido(orden[0])} te ha superado. Pierdes el gobierno, pero no la partida: pasas a liderar la oposición.`}</p>
+    ${e.gana ? '<button class="btn principal" data-a="cerrarElecciones">Empezar la legislatura</button>'
+      : e.caida ? '<button class="btn principal" data-a="cerrarElecciones">Pasar a la oposición</button>' : botonesFin()}`}`;
 }
 
 // Final de la noche electoral cuando aún no gobiernas: ganas, sigues en la oposición o te echan.
@@ -841,7 +845,11 @@ function veredictoCarrera(e, primero) {
       <button class="btn principal" data-a="formarGobierno">Formar gobierno</button>`;
   }
   if (s.fin) {
-    return `<p id="veredicto" class="veredicto neg">Gana ${nombrePartido(primero)} y tu partido no te perdona la derrota: pierdes el liderazgo.</p>${botonesFin()}`;
+    return `<p id="veredicto" class="veredicto neg">Gana ${nombrePartido(primero)}. No llegas a los escaños que te exigía el partido y te expulsa.</p>${botonesFin()}`;
+  }
+  if (e.destituido) {
+    return `<p id="veredicto" class="veredicto neg">Gana ${nombrePartido(primero)}. El partido no te perdona la derrota: pierdes el liderazgo y vuelves a ser diputado.</p>
+      <button class="btn principal" data-a="cerrarElecciones">Seguir</button>`;
   }
   return `<p id="veredicto" class="veredicto neg">Gana ${nombrePartido(primero)}. Sigues como líder de la oposición, con el partido algo más inquieto.
       Habrá elecciones de nuevo dentro de ${MESES_LEGISLATURA} meses.</p>
@@ -878,6 +886,8 @@ function htmlFin() {
     bancarrota: ['Bancarrota', 'La deuda es impagable y el Estado quiebra. Tu gobierno dimite.'],
     revuelta: ['El gobierno cae', 'La inestabilidad desborda las calles y pierdes el control del país.'],
     elecciones: ['Derrota electoral', 'Has perdido las elecciones.'],
+    directiva: ['El partido te expulsa', 'No has cumplido la directiva que te marcó tu partido. Tu carrera política se acaba aquí.'],
+    corrupcion: ['Te han pillado', 'La prensa destapa tus trapos sucios. Dimites, el partido te expulsa y los tribunales te esperan.'],
     congreso: ['Tu carrera se estanca', `El partido ha preferido dos veces a ${LIDER_INICIAL}. Sin dirigirlo no podrás ser candidato.`],
     destituido: ['El partido te retira su confianza', 'Los tuyos convocan un congreso de urgencia y eligen a otro líder.'],
     conquistado: ['El país ha caído', 'Las tropas enemigas ocupan todas tus provincias y tu gobierno se rinde.'],
@@ -921,6 +931,7 @@ function renderModal() {
     else if (s.resultadoVoto) [tipo, html] = ['voto', htmlVoto()];
     else if (s.elecciones) [tipo, html] = ['elecciones', htmlElecciones()];
     else if (s.congreso) [tipo, html] = ['congreso', htmlCongreso()];
+    else if (s.caida && !s.fin) [tipo, html] = ['caida', htmlCaida()];
     else if (s.fin) [tipo, html] = ['fin', htmlFin()];
     else if (s.propuestas && s.propuestas.length) [tipo, html] = ['propuesta', htmlPropuesta()];
     else if (s.votacion) [tipo, html] = ['votacion', htmlVotacionGobierno()];
@@ -998,7 +1009,7 @@ const acciones = {
   menuPrincipal: () => { ui.menu = 'principal'; ui.menuAnim = true; RED.error = ''; },
   paso: d => { ui.paso = +d.v; scrollTo(0, 0); },
   // Los valores llegan como texto desde el HTML: algunos campos son números o un sí/no.
-  cfg: d => { ui.cfg[d.k] = d.k === 'legislatura' ? +d.v : d.k === 'propio' ? d.v === '1' : d.v; },
+  cfg: d => { ui.cfg[d.k] = d.k === 'legislatura' || d.k === 'nPartidos' ? +d.v : d.k === 'propio' ? d.v === '1' : d.v; },
   cfgPrincipio: d => {
     const p = ui.cfg.principios, i = p.indexOf(d.v);
     if (i >= 0) p.splice(i, 1); else if (p.length < MAX_PRINCIPIOS) p.push(d.v);
@@ -1118,6 +1129,8 @@ const acciones = {
   prometer: d => jugar('prometer', d),
   postura: d => jugar('postura', d),
   cerrarCongreso: () => jugar('cerrarCongreso'),
+  cerrarCaida: () => { jugar('cerrarCaida'); Object.assign(ui, { tab: 'carrera', animTab: true }); },
+  corrupcion: d => jugar('corrupcion', d),
   formarGobierno: () => {
     jugar('formarGobierno');
     Object.assign(ui, { animElec: '', prov: null, tab: 'provincia', animTab: true, modoMapa: 'politico', ventana: 'intro' });
@@ -1177,11 +1190,16 @@ document.addEventListener('input', ev => {
   } else if (t.id === 'cfg-semilla') {
     const n = parseInt(t.value.replace(/\D/g, ''), 10);
     if (n) { ui.cfg.semilla = n; ponerHTML($('#menu-hero'), vistaMundo()); }
+  } else if (t.id === 'cfg-color') {
+    ui.cfg.color = t.value;
+    const logo = $('.vista-partido .logo-partido, .vista-partido svg');
+    if (logo) logo.style.setProperty('--c', t.value);
   } else if (t.id === 'codigo-sala') ui.codigoSala = t.value.toUpperCase();
   else if (t.id === 'op-volumen') { opciones.volumen = t.value / 100; aplicarOpciones(); }
 });
 document.addEventListener('change', ev => {
   if (ev.target.id === 'op-volumen') Sonido.tocar('moneda');
+  if (ev.target.id === 'cfg-color') { ui.cfg.color = ev.target.value; if (ui.pantalla === 'sala') enviarPerfil(); render(); }
   // En la sala, el nombre del jugador, del partido y del país se mandan al terminar de escribirlos.
   if (ui.pantalla === 'sala' && /^cfg-(lider|partido|pais)$/.test(ev.target.id)) { enviarPerfil(); render(); }
 });

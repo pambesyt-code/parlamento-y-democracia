@@ -103,29 +103,57 @@ const PRINCIPIOS = {
 const MAX_PRINCIPIOS = 2;
 
 // afinidad: cuánto le gusta a cada partido cada tipo de ley (-2 a +2). base: fuerza electoral por grupo.
+// eje: dónde se sienta en el hemiciclo, de izquierda (-2) a derecha (+2).
 // «uc» es el partido de centro: lo sustituye el tuyo si creas uno propio.
-const PARTIDOS = {
+// Los cuatro primeros están en todos los países; los demás, según cuántos partidos tenga la partida.
+const CATALOGO_PARTIDOS = {
   uc: {
-    nombre: 'Unión Cívica', siglas: 'UC', color: '#c9902b', emblema: 'sol', lema: 'Centro moderado y pactista.',
+    nombre: 'Unión Cívica', siglas: 'UC', color: '#c9902b', emblema: 'sol', lema: 'Centro moderado y pactista.', eje: 0,
     afinidad: {}, base: { obreros: 30, empresarios: 30, campesinos: 30, jovenes: 30 },
   },
   fo: {
-    nombre: 'Frente Obrero', siglas: 'FO', color: '#b5443b', emblema: 'engranaje', lema: 'Izquierda sindical, fuerte entre los obreros.',
+    nombre: 'Frente Obrero', siglas: 'FO', color: '#b5443b', emblema: 'engranaje', lema: 'Izquierda sindical, fuerte entre los obreros.', eje: -2,
     afinidad: { izquierda: 2, social: 1, derecha: -2, orden: -1 },
     base: { obreros: 45, empresarios: 4, campesinos: 18, jovenes: 28 },
   },
   ac: {
-    nombre: 'Alianza Conservadora', siglas: 'AC', color: '#35568c', emblema: 'torre', lema: 'Derecha de orden, la preferida de los empresarios.',
+    nombre: 'Alianza Conservadora', siglas: 'AC', color: '#35568c', emblema: 'torre', lema: 'Derecha de orden, la preferida de los empresarios.', eje: 1.6,
     afinidad: { derecha: 2, orden: 2, izquierda: -2, social: -1, verde: -1, agrario: 1 },
     base: { obreros: 14, empresarios: 55, campesinos: 28, jovenes: 10 },
   },
   va: {
-    nombre: 'Verdes Agrarios', siglas: 'VA', color: '#4f8a4b', emblema: 'hoja', lema: 'Ecologistas del campo, pequeños pero decisivos.',
+    nombre: 'Verdes Agrarios', siglas: 'VA', color: '#4f8a4b', emblema: 'hoja', lema: 'Ecologistas del campo, pequeños pero decisivos.', eje: -0.8,
     afinidad: { verde: 2, agrario: 2, social: 1, derecha: -1 },
     base: { obreros: 5, empresarios: 5, campesinos: 20, jovenes: 22 },
   },
+  pl: {
+    nombre: 'Partido Liberal', siglas: 'PL', color: '#d8b13a', emblema: 'balanza', lema: 'Mercado libre y libertades. Fuerte en las ciudades.', eje: 0.9,
+    afinidad: { derecha: 2, social: 1, orden: -1, izquierda: -1 },
+    base: { obreros: 6, empresarios: 26, campesinos: 4, jovenes: 16 },
+  },
+  mn: {
+    nombre: 'Movimiento Nacional', siglas: 'MN', color: '#4a4f5c', emblema: 'escudo', lema: 'Mano dura y patria primero. Crece cuando hay crisis.', eje: 2,
+    afinidad: { orden: 2, agrario: 1, social: -2, verde: -1, izquierda: -1 },
+    base: { obreros: 12, empresarios: 8, campesinos: 14, jovenes: 7 },
+  },
+  ms: {
+    nombre: 'Marea Social', siglas: 'MS', color: '#a8478f', emblema: 'megafono', lema: 'Nueva izquierda joven: vivienda, derechos y clima.', eje: -1.4,
+    afinidad: { social: 2, verde: 1, izquierda: 1, orden: -2 },
+    base: { obreros: 10, empresarios: 2, campesinos: 3, jovenes: 24 },
+  },
+  pr: {
+    nombre: 'Partido Regionalista', siglas: 'PR', color: '#2f8c8c', emblema: 'faro', lema: 'Defiende las provincias frente a la capital.', eje: 0.3,
+    afinidad: { agrario: 2, social: 1 },
+    base: { obreros: 8, empresarios: 6, campesinos: 16, jovenes: 6 },
+  },
 };
-const ORDEN_HEMICICLO = ['fo', 'va', 'uc', 'ac'];
+const PARTIDOS_FIJOS = ['fo', 'va', 'uc', 'ac'];
+const PARTIDOS_EXTRA = ['pl', 'mn', 'ms', 'pr'];
+// Cuántos partidos hay en cada parlamento (los partidos propios de otros jugadores se suman aparte).
+const NUM_PARTIDOS = { 4: 'Clásico', 5: 'Animado', 6: 'Muy repartido', 8: 'Todos' };
+// Los partidos del país que se está mirando y su orden en el hemiciclo. Los rellena activarPartidos().
+const PARTIDOS = {};
+const ORDEN_HEMICICLO = [];
 const COLORES_PARTIDO = ['#c9902b', '#2a9d8f', '#7b4fa6', '#de6b35', '#c9478b'];
 const EMBLEMAS = ['sol', 'estrella', 'antorcha', 'balanza', 'faro'];
 

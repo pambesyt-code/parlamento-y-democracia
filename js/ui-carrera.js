@@ -26,7 +26,7 @@ function tarjetaCita() {
       <div class="tarjeta-cab"><b>Congreso del partido</b><span class="cuenta">en ${plural(c.congresoMes - s.mes, 'mes', 'meses')}</span></div>
       <p>Gana quien llegue con más apoyo. El tuyo es tu apoyo en el partido (${c.interno}) más una quinta parte de tu prestigio (${Math.round(c.prestigio / 5)}).</p>
       ${duelo([[esc(s.config.lider), apoyoCongreso(s), colorJugador()], [LIDER_INICIAL, c.apoyoLider, COLOR_RIVAL]])}
-      <p class="nota">${c.intentos ? 'Es tu última oportunidad: si pierdes, se acaba la carrera.' : 'Si pierdes, habrá un segundo y último congreso 6 meses después.'}</p></div>`;
+      <p class="nota">${c.intentos ? 'Si vuelves a perder, el partido te dará otra ocasión en un año, pero con una directiva que cumplir.' : 'Si pierdes, habrá otro congreso 6 meses después.'}</p></div>`;
   }
   const enc = estimarVotos(s, false), rival = Object.keys(enc).filter(p => p !== ID_JUGADOR).reduce((a, b) => (enc[b] > enc[a] ? b : a));
   return `<div class="tarjeta resaltada">
@@ -41,7 +41,7 @@ function tabCarrera() {
   return `<h2>${esc(s.config.lider)}</h2>
     <p class="nota">${lider ? `Líder de ${nombrePartido(ID_JUGADOR)} y jefe de la oposición` : `Diputado de ${nombrePartido(ID_JUGADOR)}, en la oposición`}.
       Gobierna ${nombrePartido(s.gobiernoIA)}.</p>
-    ${pasosCarrera()}${tarjetaCita()}
+    ${pasosCarrera()}${tarjetaDirectiva()}${tarjetaCita()}
     <h3>Qué haces este mes</h3>
     <p class="nota">Cada cosa, una vez al mes. También puedes presentar leyes en Parlamento y dar mítines en Votantes.</p>
     ${accionesCarrera(s).map(a => `<div class="edif">
@@ -50,7 +50,8 @@ function tabCarrera() {
       <div class="edif-acc">${boton(`Hacerlo <span class="coste">${ico('estrella')}${a.cp}${a.fondos ? ` ${ico('moneda')}${a.fondos}` : ''}</span>`,
         { a: 'accionCarrera', v: a.id }, puedeAccionCarrera(s, a.id), 'mini')}</div>
     </div>`).join('')}
-    <h3>Tu partido en las encuestas</h3>${grafica(s.historial.map(h => h.v), ' escaños', [10, 50])}`;
+    <h3>Tu partido en las encuestas</h3>${grafica(s.historial.map(h => h.v), ' escaños', [10, 50])}
+    ${htmlCorrupcion()}`;
 }
 
 function tabPartido() {
@@ -116,12 +117,50 @@ function tabMapaElectoral() {
       <span class="cuenta" style="margin-left:auto">tu partido: ${Math.round(votos[ID_JUGADOR] * 100)}%</span></button>`).join('')}</div>`;
 }
 
+// La directiva que te ha marcado el partido, si tienes una.
+function tarjetaDirectiva() {
+  const s = estado, e = estadoDirectiva(s);
+  if (!e) return '';
+  return `<div class="tarjeta directiva ${e.ok ? 'va-bien' : 'va-mal'}">
+    <div class="tarjeta-cab"><b>${ico('periodico')} Directiva del partido</b><span class="cuenta">${e.meses > 0 ? `quedan ${plural(e.meses, 'mes', 'meses')}` : 'vence ya'}</span></div>
+    <p><b>${esc(textoDirectiva(s.directiva))}.</b> Si no la cumples, el partido te expulsa y se acaba la partida.</p>
+    <p class="nota">${chip(e.ok ? 'Vas cumpliendo' : 'No llegas', e.ok ? 'pos' : 'neg')} ${e.texto}</p></div>`;
+}
+
+// Las cloacas: ventajas rápidas a cambio de que suba la sospecha.
+function htmlCorrupcion() {
+  const s = estado, ids = corrupcionDisponible(s), riesgo = Math.round(riesgoCorrupcion(s) * 100), sos = s.sospecha || 0;
+  const coste = a => (a.coste ? ` <span class="coste">${ico('moneda')}${a.coste}</span>` : '');
+  return `<details class="cloacas" ${sos ? 'open' : ''}><summary>Las cloacas <span class="cuenta ${riesgo ? 'neg' : ''}">sospecha ${sos} · riesgo ${riesgo}% al mes</span></summary>
+    <p class="nota">Atajos sucios: dan ventaja al momento, pero suben la sospecha. Cada mes la prensa puede tirar del hilo:
+      si te pillan, <b>se acaba la partida</b>. La sospecha baja 3 puntos al mes si no haces nada.</p>
+    <div class="barra-sospecha"><i style="width:${sos}%"></i></div>
+    ${ids.map(id => {
+      const a = CORRUPCION[id];
+      return `<div class="edif"><span class="edif-ico">${ico(a.icono)}</span>
+        <div class="edif-txt"><b>${a.nombre}</b><p>${a.desc}</p><div class="chips">${a.efectos ? chipsEfectos(a.efectos) : ''}${chip(`Sospecha ${a.sospecha > 0 ? '+' : ''}${a.sospecha}`, a.sospecha > 0 ? 'neg' : 'pos')}</div></div>
+        <div class="edif-acc">${boton(`Hacerlo${coste(a)}`, { a: 'corrupcion', v: id }, puedeCorrupcion(s, id), 'mini')}</div></div>`;
+    }).join('')}</details>`;
+}
+
+function htmlCaida() {
+  const s = estado, [titulo, texto] = MOTIVOS_CAIDA[s.caida.motivo] || MOTIVOS_CAIDA.elecciones;
+  const lider = esLider(s);
+  return `<div class="ev-cab"><span class="ev-ico">${ico('periodico')}</span><h2>${titulo}</h2></div>
+    <p>${texto} La partida sigue: ${lider ? `ahora lideras ${nombrePartido(ID_JUGADOR)} desde la oposición, y gobierna ${nombrePartido(s.gobiernoIA)}`
+      : `vuelves a ser diputado de ${nombrePartido(ID_JUGADOR)}, que ahora dirige ${esc(LIDER_INICIAL)}`}.</p>
+    ${s.directiva ? `<div class="tarjeta directiva va-mal"><p><b>El partido te exige: ${esc(textoDirectiva(s.directiva).toLowerCase())}.</b></p>
+      <p class="nota">Si no lo cumples, te expulsa y se acaba la partida.</p></div>` : ''}
+    <p class="nota">${lider ? 'Gana las próximas elecciones y vuelves a gobernar.' : 'Gánate al partido, gana el congreso y vuelve a por el gobierno.'}</p>
+    <button class="btn principal" data-a="cerrarCaida">Seguir en la oposición</button>`;
+}
+
 // ---------- Ventanas ----------
 
 function htmlCongreso() {
   const s = estado, c = s.congreso;
   const veredicto = c.gana ? 'Ganas el congreso. Desde hoy diriges el partido y serás su candidato a las elecciones.'
-    : c.ultimo ? `${LIDER_INICIAL} vuelve a ganar. El partido no te dará otra oportunidad.`
+    : c.ultimo ? `${LIDER_INICIAL} vuelve a ganar. Habrá otro congreso dentro de un año${s.directiva ? `, y mientras tanto el partido te exige: ${esc(textoDirectiva(s.directiva).toLowerCase())}` : ''}.`
       : `${LIDER_INICIAL} conserva el liderazgo. Tendrás una última oportunidad dentro de 6 meses.`;
   const salida = c.gana ? '<button class="btn principal" data-a="cerrarCongreso">Tomar las riendas</button>'
     : s.fin ? botonesFin() : '<button class="btn principal" data-a="cerrarCongreso">Seguir como diputado</button>';

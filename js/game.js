@@ -28,23 +28,67 @@ const esHumano = pid => !!(NACIONES[pid] && NACIONES[pid].humano);
 const CONFIG_BASE = {
   modo: 'gobierno', lider: 'Alex Montero', dificultad: 'normal', legislatura: 24,
   propio: true, partidoId: 'uc', partido: 'Unión Cívica', color: COLORES_PARTIDO[0], emblema: EMBLEMAS[0], principios: [],
-  pais: 'Aldora', colorPais: COLORES_PAIS[0], tamano: 'mediano', semilla: 1,
+  pais: 'Aldora', colorPais: COLORES_PAIS[0], tamano: 'mediano', semilla: 1, nPartidos: 5,
 };
 
 // Completa una configuración. Si te unes a un partido que ya existe, llevas su nombre, color y emblema.
 function completarConfig(config) {
   const cfg = { ...CONFIG_BASE, ...config, principios: [...((config && config.principios) || [])] };
+  if (!/^#[0-9a-f]{6}$/i.test(cfg.color)) cfg.color = COLORES_PARTIDO[0];
   if (cfg.propio) cfg.partidoId = 'uc';
-  else Object.assign(cfg, { partido: PARTIDOS[cfg.partidoId].nombre, color: PARTIDOS[cfg.partidoId].color, emblema: PARTIDOS[cfg.partidoId].emblema, principios: [] });
+  else {
+    if (!CATALOGO_PARTIDOS[cfg.partidoId]) cfg.partidoId = 'fo';
+    const P = CATALOGO_PARTIDOS[cfg.partidoId];
+    Object.assign(cfg, { partido: P.nombre, color: P.color, emblema: P.emblema, principios: [] });
+  }
   return cfg;
 }
+
+// El escaño del partido de un jugador: el del partido al que se une o, si crea uno, el que se le
+// haya dado (el de centro si nadie más lo usa; si no, uno nuevo: j1, j2...).
+const huecoDe = cfg => cfg.hueco || (cfg.propio ? 'uc' : cfg.partidoId);
+
+// Hacia dónde se sienta un partido creado por un jugador, según sus principios.
+const EJE_PRINCIPIO = { izquierda: -2, derecha: 2, social: -0.6, orden: 1.2, verde: -0.8, agrario: 0.4 };
+const ejeDePrincipios = p => (p.length ? p.reduce((a, t) => a + (EJE_PRINCIPIO[t] || 0), 0) / p.length : 0);
+const PLANTILLA_JUGADOR = {
+  nombre: 'Partido', siglas: 'P', color: '#888888', emblema: 'estrella', lema: '', eje: 0,
+  afinidad: {}, base: { obreros: 20, empresarios: 20, campesinos: 20, jovenes: 20 },
+};
+
+// Elige los partidos de un país: los cuatro fijos, los que hayan escogido sus jugadores y, hasta
+// llegar a n, otros al azar. Los partidos propios de la oposición se añaden aparte con huecos j1, j2...
+function elegirPartidos(n, pedidos = []) {
+  const ids = [...PARTIDOS_FIJOS];
+  for (const id of pedidos) if (CATALOGO_PARTIDOS[id] && !ids.includes(id)) ids.push(id);
+  const resto = PARTIDOS_EXTRA.filter(id => !ids.includes(id)).sort(() => Math.random() - 0.5);
+  while (ids.length < Math.min(8, n || 4) && resto.length) ids.push(resto.pop());
+  return ids;
+}
+
+// Llena PARTIDOS y ORDEN_HEMICICLO con los partidos de un país (los cuatro de siempre si no hay país).
+function activarPartidos(s) {
+  const ids = (s && s.partidos) || PARTIDOS_FIJOS;
+  for (const k in PARTIDOS) delete PARTIDOS[k];
+  for (const id of ids) {
+    PARTIDOS[id] = { ...(CATALOGO_PARTIDOS[id] || PLANTILLA_JUGADOR) };
+    const o = s && s.oposicion && s.oposicion.find(x => x.partido === id);
+    // Los partidos propios de los jugadores se sientan según sus ideas.
+    if (s && id === huecoDe(s.config) && s.config.propio) PARTIDOS[id].eje = ejeDePrincipios(s.config.principios);
+    else if (o && o.perfil.propio) PARTIDOS[id].eje = ejeDePrincipios(o.perfil.principios || []);
+  }
+  ORDEN_HEMICICLO.length = 0;
+  ORDEN_HEMICICLO.push(...ids.slice().sort((a, b) => PARTIDOS[a].eje - PARTIDOS[b].eje));
+}
+activarPartidos(null);
 
 // Activa una nación: a partir de aquí «tu país», «tu partido» y «los demás países» son los suyos.
 function usarNacion(s) {
   PAIS_JUGADOR.id = s.nacion;
   PAIS_JUGADOR.nombre = s.config.pais;
   PAIS_JUGADOR.colores = tonosPais(s.config.colorPais);
-  ID_JUGADOR = s.config.propio ? 'uc' : s.config.partidoId;
+  activarPartidos(s);
+  ID_JUGADOR = huecoDe(s.config);
   MESES_LEGISLATURA = s.config.legislatura;
   LIDER_INICIAL = (s.lideres && s.lideres[ID_JUGADOR]) || 'Marta Solís';
   verDesde(s.nacion);
@@ -97,7 +141,7 @@ function enlazarNacion(s) {
 const edificiosVacios = p => Object.fromEntries(Object.keys(EDIFICIOS).map(k => [k, (p && p.ini && p.ini[k]) || 0]));
 
 // Crea la nación de un jugador sobre un mundo ya generado. comun: lo compartido por toda la partida.
-function crearNacion(cfg, pid, comun) {
+function crearNacion(cfg, pid, comun, partidos) {
   // modo: 'carrera' mientras no gobiernas, 'gobierno' después. gobiernoIA: partido rival que gobierna, si lo hay.
   const s = {
     v: VERSION_GUARDADO, nacion: pid, config: cfg, modo: 'gobierno', gobiernoIA: null, carrera: null, mesGobierno: 0,
@@ -106,6 +150,7 @@ function crearNacion(cfg, pid, comun) {
     prestamos: [], promesas: [], objetivos: {}, historial: [],
     tropas: TROPAS_INICIALES, guerras: {}, batallas: [], anexiones: [], mapaVersion: 0,
     impuestos: 'normales', tributos: [], propuestas: [], oposicion: [], tokenGobierno: null, lideres: lideresAlAzar(cfg.lider),
+    partidos: partidos || elegirPartidos(cfg.nPartidos, [huecoDe(cfg)]), sospecha: 0, corrupcion: {}, directiva: null, caida: null,
     duenos: comun.duenos, ocupadas: comun.ocupadas, mundo: comun.mundo,
     cuenta: { obras: 0, leyes: 0, elecciones: 0, plenos: 0, propuestas: 0, conquistas: 0 },
     propuesta: null, votacion: null, resultadoVoto: null, evento: null, congreso: null, elecciones: null, fin: null, ultimaLey: null,
@@ -136,7 +181,7 @@ function crearNacion(cfg, pid, comun) {
 // Un nombre distinto para quien dirige cada partido (y ninguno igual al tuyo).
 function lideresAlAzar(tuNombre) {
   const libres = NOMBRES_LIDERES.filter(n => n !== tuNombre).sort(() => Math.random() - 0.5);
-  return Object.fromEntries(Object.keys(PARTIDOS).map((pid, i) => [pid, libres[i % libres.length]]));
+  return Object.fromEntries(Object.keys(CATALOGO_PARTIDOS).map((pid, i) => [pid, libres[i % libres.length]]));
 }
 
 // Los partidos parecidos al del gobierno parten con mejor relación con él.
@@ -790,8 +835,12 @@ function celebrarElecciones(s) {
     for (const pid in s.relPartidos) s.relPartidos[pid] = Math.round(s.relPartidos[pid] / 2);
     noticia(s, `${partidoInfo(s, ID_JUGADOR).nombre} gana las elecciones con ${escanos[ID_JUGADOR]} escaños.`, 'bien');
   } else {
-    s.fin = 'elecciones';
+    // Perder no acaba la partida: pasas a la oposición con una directiva del partido.
     noticia(s, `${partidoInfo(s, ID_JUGADOR).nombre} pierde las elecciones.`, 'mal');
+    s.legislatura++;
+    s.proximaEleccion = s.mes + MESES_LEGISLATURA;
+    caerDelGobierno(s, 'elecciones');
+    s.elecciones.caida = true;
   }
 }
 
@@ -1050,15 +1099,15 @@ function consejo(s) {
 function comprobarFin(s) {
   if (s.fin) return;
   if (s.modo === 'carrera') {
-    if (s.carrera.cargo === 'lider' && s.carrera.interno < 25) s.fin = 'destituido';
+    if (s.carrera.cargo === 'lider' && s.carrera.interno < 25) perderLiderazgo(s);
   } else if (!provinciasLibres(s).length) s.fin = 'conquistado';
   else if (!paisesVivos(s).length) s.fin = 'victoria';
-  else if (s.dinero < -400) s.fin = 'bancarrota';
-  else if (s.estabilidad < 25) s.fin = 'revuelta';
+  else if (s.dinero < -400) caerDelGobierno(s, 'bancarrota');
+  else if (s.estabilidad < 25) caerDelGobierno(s, 'revuelta');
 }
 
 // Hay algo en pantalla que el jugador debe resolver antes de pasar de mes.
-const hayAlgoPendiente = s => !!(s.fin || s.evento || s.votacion || s.congreso || s.elecciones || s.resultadoVoto
+const hayAlgoPendiente = s => !!(s.fin || s.evento || s.votacion || s.congreso || s.elecciones || s.caida || s.resultadoVoto
   || s.batallas.length || s.propuestas.length);
 
 // En multijugador el mes avanza aunque alguien no haya contestado: se decide por él lo más prudente.
@@ -1069,6 +1118,7 @@ function resolverPendientes(s) {
     else if (s.propuestas.length) responderPropuesta(s, 0, false);
     else if (s.elecciones) { if (s.elecciones.carrera && s.elecciones.gana) formarGobierno(s); else s.elecciones = null; }
     else if (s.congreso) s.congreso = null;
+    else if (s.caida) s.caida = null;
     else if (s.votacion) resolverPostura(s, posturasGobierno(s)[0].id);
     else if (s.evento) resolverEvento(s, 0);
   }
@@ -1150,6 +1200,7 @@ function mesNacionDespues(s) {
   if (s.estabilidad < 35) noticia(s, 'El país está inestable. Si baja de 25, el gobierno caerá.', 'mal');
   revisarAcuerdos(s);
   revisarPromesas(s);
+  revisarCorrupcion(s);
   comprobarFin(s);
   if (s.fin) return;
   const faltan = s.proximaEleccion - s.mes;

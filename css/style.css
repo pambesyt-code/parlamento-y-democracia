@@ -730,3 +730,15 @@ html[data-anim="no"] *, html[data-anim="no"] *::before, html[data-anim="no"] *::
   .resumen-fin { grid-template-columns: 1fr 1fr; }
   .voto-partidos { grid-template-columns: 1fr; }
 }
+
+/* ---------- Color libre, directivas y cloacas ---------- */
+.muestra.libre { position: relative; display: inline-block; overflow: hidden; }
+.muestra.libre input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.tarjeta.directiva { border-color: var(--laton); }
+.tarjeta.directiva.va-mal { border-color: rgba(181, 68, 59, .55); background: rgba(181, 68, 59, .07); }
+.tarjeta.directiva.va-bien { border-color: rgba(79, 138, 75, .55); background: rgba(79, 138, 75, .07); }
+.cloacas { margin-top: 18px; border-top: 1px dashed var(--linea); padding-top: 6px; }
+.cloacas summary { cursor: pointer; font-family: inherit; font-weight: 700; padding: 8px 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.cloacas summary .cuenta { font-weight: 400; }
+.barra-sospecha { height: 8px; border-radius: 4px; background: var(--marfil-2); border: 1px solid var(--linea); overflow: hidden; margin: 6px 0 4px; }
+.barra-sospecha i { display: block; height: 100%; background: linear-gradient(90deg, #d8b13a, #b5443b); transition: width .4s; }

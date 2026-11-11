@@ -217,8 +217,11 @@ function celebrarCongreso(s) {
     s.cp = limitar(s.cp + 3, 0, CP_MAXIMO);
     noticia(s, `${s.config.lider} gana el congreso y pasa a dirigir ${s.config.partido}.`, 'bien');
   } else if (c.intentos >= 2) {
-    s.fin = 'congreso';
+    // No se acaba la carrera: el partido te da otra ocasión dentro de un año, con una directiva.
+    c.intentos = 0;
+    c.congresoMes = s.mes + 12;
     noticia(s, `${LIDER_INICIAL} vuelve a ganar el congreso.`, 'mal');
+    if (!s.directiva) ponerDirectiva(s, 'interno');
   } else {
     c.congresoMes = s.mes + 6;
     noticia(s, `${LIDER_INICIAL} retiene el liderazgo. Habrá otro congreso dentro de 6 meses.`, 'mal');
@@ -233,13 +236,15 @@ function eleccionesCarrera(s) {
   s.propuesta = null;
   s.elecciones = { antes, escanos, gana, carrera: true };
   if (gana) {
+    if (s.directiva) cumplirDirectiva(s);
     noticia(s, `${s.config.partido} gana las elecciones con ${escanos[ID_JUGADOR]} escaños.`, 'bien');
     return;
   }
+  noticia(s, `${s.config.partido} pierde las elecciones con ${escanos[ID_JUGADOR]} escaños.`, 'mal');
+  if (juzgarDirectivaElecciones(s, escanos)) return;
   // El partido perdona mejor una derrota en la que se ganan escaños.
   c.interno = limitar(c.interno - (escanos[ID_JUGADOR] > antes[ID_JUGADOR] ? 8 : 20));
-  noticia(s, `${s.config.partido} pierde las elecciones con ${escanos[ID_JUGADOR]} escaños.`, 'mal');
-  if (c.interno < 35) { s.fin = 'destituido'; return; }
+  if (esLider(s) && c.interno < 35) { perderLiderazgo(s); s.elecciones.destituido = true; }
   const rivales = Object.keys(escanos).filter(pid => pid !== ID_JUGADOR);
   s.gobiernoIA = rivales.reduce((a, b) => (escanos[b] > escanos[a] ? b : a));
   c.fuerzaGobierno = dificultad(s).fuerzaGobierno - 0.1;
@@ -264,6 +269,7 @@ function formarGobierno(s) {
   s.cuenta.elecciones++;
   s.ultimoMitin = -1;
   s.recientes = [];
+  s.directiva = null;
   s.promesas = c.promesas.map(ley => ({ ley, limite: s.mes + 12, estado: s.leyes[ley] ? 'cumplida' : 'pendiente' }));
   s.historial = [puntoHistorial(s)];
   noticia(s, `${s.config.lider} forma gobierno tras ganar las elecciones.`, 'bien');
@@ -331,8 +337,10 @@ function mesCarreraDespues(s) {
   const c = s.carrera;
   s.historial.push(puntoHistorial(s));
   if (s.historial.length > 240) s.historial.shift();
+  revisarDirectiva(s);
+  revisarCorrupcion(s);
   comprobarFin(s);
-  if (s.fin) { noticia(s, `${s.config.partido} retira su confianza a ${s.config.lider}.`, 'mal'); return; }
+  if (s.fin) return;
   const faltan = s.proximaEleccion - s.mes;
   if (faltan === 0) return celebrarElecciones(s);
   if (c.congresoMes === s.mes) return celebrarCongreso(s);
