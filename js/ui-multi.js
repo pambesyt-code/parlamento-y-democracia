@@ -268,6 +268,7 @@ function entrarComoJugador(s) {
 // menu: 'multi' cuando se sale por un problema de conexión, para que se vea el aviso.
 function salirAlMenu(menu = 'principal') {
   estado = null;
+  ui.tutorial = null;
   irAlMenu(menu);
   render();
 }

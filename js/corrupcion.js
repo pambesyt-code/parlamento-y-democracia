@@ -104,6 +104,8 @@ function caerDelGobierno(s, motivo) {
   }
   s.inicioLegislatura = s.mes;
   s.caida = { motivo };
+  // Los objetivos de la oposición que ya cumples de entrada se dan por hechos, sin premio.
+  for (const o of OBJETIVOS_CARRERA) if (!s.objetivos[o.id] && o.hecho(s)) s.objetivos[o.id] = true;
   noticia(s, `${s.config.lider} deja el gobierno y pasa a liderar la oposición. Gobierna ${PARTIDOS[s.gobiernoIA].nombre}.`, 'mal');
   ponerDirectiva(s, 'escanos');
 }

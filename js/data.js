@@ -1,7 +1,7 @@
 'use strict';
 // Datos del juego: todo lo que se puede equilibrar o ampliar sin tocar las reglas.
 
-const VERSION = '0.5';
+const VERSION = '1.0';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const ANIO_INICIAL = 2030;
 const CP_MAXIMO = 10;

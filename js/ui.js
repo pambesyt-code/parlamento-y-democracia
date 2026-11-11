@@ -86,10 +86,26 @@ function ajustarVista([x, y, w, h]) {
   aplicarVista();
 }
 
+// Lleva la vista hasta otra con un movimiento corto. La rueda y el arrastre lo cortan.
+function animarVista(destino) {
+  if (!animar()) { ui.animVista = null; return ajustarVista(destino); }
+  const de = vistaMapa().slice(), t0 = performance.now(), ficha = (ui.animVista = {}), ms = 280;
+  const paso = t => {
+    if (ui.animVista !== ficha) return;
+    const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    ajustarVista(de.map((v, i) => v + (destino[i] - v) * e));
+    if (k < 1) requestAnimationFrame(paso); else ui.animVista = null;
+  };
+  requestAnimationFrame(paso);
+  // Con la pestaña en segundo plano no hay fotogramas: se asegura la vista final.
+  setTimeout(() => { if (ui.animVista === ficha) { ui.animVista = null; ajustarVista(destino); } }, ms + 150);
+}
+
 // factor < 1 acerca y > 1 aleja. px y py: punto del mapa que queda quieto (0 a 1).
-function zoomMapa(factor, px = 0.5, py = 0.5) {
-  const [x, y, w, h] = vistaMapa(), nw = w * factor, nh = h * factor;
-  ajustarVista([x + (w - nw) * px, y + (h - nh) * py, nw, nh]);
+function zoomMapa(factor, px = 0.5, py = 0.5, suave = false) {
+  const [x, y, w, h] = vistaMapa(), nw = w * factor, nh = h * factor, destino = [x + (w - nw) * px, y + (h - nh) * py, nw, nh];
+  if (suave) animarVista(destino);
+  else { ui.animVista = null; ajustarVista(destino); }
 }
 
 // Rueda para acercar, arrastrar para moverse. Si se arrastra, el clic final no selecciona nada.
@@ -112,6 +128,7 @@ function prepararZoom() {
     if (!arrastre.movido && Math.hypot(dx, dy) < 6) return;
     if (!ui.vista && !arrastre.movido) return;   // con el mapa entero a la vista no hay a dónde moverse
     arrastre.movido = true;
+    ui.animVista = null;
     mapa.classList.add('arrastrando');
     const r = mapa.getBoundingClientRect(), [x, y, w, h] = arrastre.vista;
     ajustarVista([x - dx / r.width * w, y - dy / r.height * h, w, h]);
@@ -680,7 +697,11 @@ function renderContenido() {
   if (!tabsActuales()[ui.tab]) ui.tab = Object.keys(tabsActuales())[0];
   const cont = $('#contenido');
   ponerHTML(cont, vistas[ui.tab]());
+  // Al proponer una ley, su tarjeta de votación sale arriba del todo: se lleva el panel hasta ella.
+  const tramite = ui.irATramite && $('.tarjeta.tramite', cont);
+  if (tramite) { ui.irATramite = false; tramite.scrollIntoView({ behavior: animar() ? 'smooth' : 'auto', block: 'start' }); }
   if (ui.animTab) {
+    cont.scrollTop = 0;
     cont.classList.remove('entra');
     void cont.offsetWidth;
     cont.classList.add('entra');
@@ -915,8 +936,8 @@ function renderModal() {
   let tipo = '', html = '';
   if (ui.ventana === 'opciones') [tipo, html] = ['opciones', htmlOpciones()];
   else if (ui.ventana === 'ayuda') [tipo, html] = ['ayuda', htmlAyuda(false)];
-  else if (ui.ventana === 'multi') [tipo, html] = ['multi', htmlMulti()];
   else if (ui.ventana === 'confirmar') [tipo, html] = ['confirmar', htmlConfirmar()];
+  else if (ui.ventana === 'tutorial') [tipo, html] = ['tutorial', htmlElegirTutorial()];
   else if (enJuego && ui.ventana === 'noticias') [tipo, html] = ['noticias', htmlNoticias()];
   else if (enJuego && esOposicion()) {
     // En la oposición solo hay tus votaciones, el final de la partida y la bienvenida.
@@ -939,8 +960,23 @@ function renderModal() {
     else if (ui.ventana === 'intro') [tipo, html] = ['intro', htmlAyuda(true)];
   }
   const modal = $('#modal');
-  modal.hidden = !html;
-  if (!html) { modal.innerHTML = ''; modal._clave = ''; ui.modalTipo = ''; return; }
+  if (!html) {
+    // La ventana se va con una salida corta en vez de desaparecer de golpe.
+    ui.modalTipo = '';
+    modal._clave = '';
+    if (modal.hidden || modal._saliendo) return;
+    if (!animar()) { modal.hidden = true; modal.innerHTML = ''; return; }
+    modal._saliendo = true;
+    modal.classList.add('saliendo');
+    setTimeout(() => {
+      modal._saliendo = false;
+      modal.classList.remove('saliendo');
+      if (!modal._clave) { modal.hidden = true; modal.innerHTML = ''; }
+    }, 150);
+    return;
+  }
+  modal.classList.remove('saliendo');
+  modal.hidden = false;
   if (modal._clave !== html) {
     modal._clave = html;
     if (tipo === 'batalla') Sonido.tocar(s.batallas[0].exito ? 'aprobado' : 'rechazado');
@@ -979,6 +1015,7 @@ function render() {
   }
   renderChat();
   renderModal();
+  renderTutorial();
 }
 
 function entrarJuego() {
@@ -1004,6 +1041,7 @@ function jugar(nombre, d = {}) {
 }
 
 const acciones = {
+  ...accionesTutorial,
   // Menú y ventanas
   menuNueva: () => { Object.assign(ui, { menu: 'nueva', paso: 1, menuAnim: true }); },
   menuPrincipal: () => { ui.menu = 'principal'; ui.menuAnim = true; RED.error = ''; },
@@ -1020,14 +1058,18 @@ const acciones = {
     c.lider = c.lider.trim() || CONFIG_BASE.lider;
     c.partido = c.partido.trim() || CONFIG_BASE.partido;
     c.pais = c.pais.trim() || CONFIG_BASE.pais;
-    estado = nuevaPartida({ ...c, principios: [...c.principios] });
+    // En el tutorial completo la partida es una carrera en fácil, con el congreso cerca, y no hay bienvenida.
+    const guiada = tutorialCompleto();
+    estado = nuevaPartida(guiada ? configTutorialCompleto({ ...c, principios: [...c.principios] }) : { ...c, principios: [...c.principios] });
+    if (guiada) prepararPartidaTutorial(estado); else ui.tutorial = null;
     entrarJuego();
-    ui.ventana = 'intro';
+    ui.ventana = guiada ? null : 'intro';
     ui.cfg.semilla = semillaAlAzar();   // la próxima partida nueva empezará con otro mapa
   },
   continuar: () => {
     estado = cargar();
     if (!estado) return;
+    ui.tutorial = null;
     activarPartida(estado);
     entrarJuego();
   },
@@ -1076,7 +1118,7 @@ const acciones = {
   },
   provTodas: () => { ui.prov = null; },
   modoMapa: d => { ui.modoMapa = d.v; },
-  zoom: d => { if (d.v === 'mas') zoomMapa(1 / 1.4); else if (d.v === 'menos') zoomMapa(1.4); else if (d.v === 'mio') verMiPais(); else ajustarVista(GEO.viewBox); },
+  zoom: d => { if (d.v === 'mas') zoomMapa(1 / 1.4, 0.5, 0.5, true); else if (d.v === 'menos') zoomMapa(1.4, 0.5, 0.5, true); else if (d.v === 'mio') verMiPais(); else animarVista(GEO.viewBox); },
   filtroPais: d => { ui.filtroPais = d.v; },
   filtroLey: d => { ui.filtroLey = d.v; },
   abrirCartera: d => { ui.cartera = d.v || null; },
@@ -1088,7 +1130,7 @@ const acciones = {
   construir: d => jugar('construir', d),
   demoler: d => jugar('demoler', d),
   prestamo: () => jugar('prestamo'),
-  proponer: d => jugar('proponer', d),
+  proponer: d => { jugar('proponer', d); ui.irATramite = true; },
   retirar: () => jugar('retirar'),
   negociar: d => jugar('negociar', d),
   votar: () => jugar('votar'),
@@ -1133,7 +1175,7 @@ const acciones = {
   corrupcion: d => jugar('corrupcion', d),
   formarGobierno: () => {
     jugar('formarGobierno');
-    Object.assign(ui, { animElec: '', prov: null, tab: 'provincia', animTab: true, modoMapa: 'politico', ventana: 'intro' });
+    Object.assign(ui, { animElec: '', prov: null, tab: 'provincia', animTab: true, modoMapa: 'politico', ventana: ui.tutorial ? null : 'intro' });
   },
 };
 
@@ -1172,8 +1214,8 @@ document.addEventListener('click', ev => {
       for (const o of revisarObjetivos(estado)) { aviso(`Objetivo cumplido: ${o.texto}`, 'logro', 'diana'); Sonido.tocar('logro'); }
     }
     if (!pendiente && (estado.evento || estado.votacion)) setTimeout(() => Sonido.tocar('evento'), 220);
-    if (!congresoAntes && estado.congreso) setTimeout(() => Sonido.tocar(estado.congreso && estado.congreso.gana ? 'victoria' : 'derrota'), 300);
-    guardar(estado);
+    if (!congresoAntes && estado.congreso) setTimeout(() => Sonido.tocar(estado && estado.congreso && estado.congreso.gana ? 'victoria' : 'derrota'), 300);
+    if (!ui.tutorial) guardar(estado);
   }
   render();
 });
@@ -1208,7 +1250,7 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Enter' && ev.target.id === 'codigo-sala') { acciones.unirse(); return; }
   if (ev.key === 'Escape' && ui.ventana && ui.ventana !== 'intro') { ui.ventana = null; render(); return; }
   if (ev.key === '?' && !/INPUT|TEXTAREA/.test(ev.target.tagName)) { ui.ventana = 'ayuda'; render(); return; }
-  if (ui.pantalla !== 'juego' || !$('#modal').hidden || /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
+  if (ui.pantalla !== 'juego' || !$('#modal').hidden || /INPUT|TEXTAREA|SELECT|SUMMARY/.test(ev.target.tagName)) return;
   if (ev.key === ' ' && ev.target.tagName !== 'BUTTON') { ev.preventDefault(); $('#btn-mes').click(); return; }
   const tab = ev.key.length === 1 ? Object.keys(tabsActuales())['1234567'.indexOf(ev.key)] : null;
   if (tab) { ui.tab = tab; ui.animTab = true; render(); }
@@ -1230,7 +1272,7 @@ function verMiPais() {
   const xs = ps.map(p => p.cx), ys = ps.map(p => p.cy), m = 70, [, , bw, bh] = GEO.viewBox;
   const x0 = Math.min(...xs) - m, x1 = Math.max(...xs) + m, y0 = Math.min(...ys) - m, y1 = Math.max(...ys) + m;
   const k = Math.max((x1 - x0) / bw, (y1 - y0) / bh), w = bw * k, h = bh * k;
-  ajustarVista([(x0 + x1) / 2 - w / 2, (y0 + y1) / 2 - h / 2, w, h]);
+  animarVista([(x0 + x1) / 2 - w / 2, (y0 + y1) / 2 - h / 2, w, h]);
 }
 
 aplicarOpciones();

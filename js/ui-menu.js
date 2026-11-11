@@ -62,18 +62,22 @@ function htmlMenuPrincipal() {
   const g = cargar();
   const continuar = g && !g.fin
     ? botonMenu({ a: 'continuar' }, 'play', 'Continuar partida', `${esc(g.config.partido)} en ${esc(g.config.pais)}, ${fecha(g.mes)}`, 'destacado') : '';
+  // A quien llega por primera vez se le señala el tutorial; después, la partida.
+  const novato = !continuar && !tutorialVisto();
   return `<div class="menu-titulo">
       <h1>Parlamento y&nbsp;Diplomacia</h1>
       <p class="menu-lema">Gobierna tu país, negocia cada ley, defiende tus fronteras y sobrevive a las urnas.</p>
     </div>
     <nav class="menu-lista" aria-label="Menú principal">
       ${continuar}
-      ${botonMenu({ a: 'menuNueva' }, 'usuario', 'Un jugador', 'Partida nueva contra la IA', continuar ? '' : 'destacado')}
+      ${novato ? botonMenu({ a: 'tutorial' }, 'birrete', 'Tutorial', 'Aprende a jugar paso a paso: versión rápida o completa', 'destacado') : ''}
+      ${botonMenu({ a: 'menuNueva' }, 'usuario', 'Un jugador', 'Partida nueva contra la IA', continuar || novato ? '' : 'destacado')}
       ${botonMenu({ a: 'menuMulti' }, 'gente', 'Multijugador', 'En directo con amigos, con un código de sala')}
+      ${novato ? '' : botonMenu({ a: 'tutorial' }, 'birrete', 'Tutorial', 'Partida de práctica guiada: simple o completa')}
       ${botonMenu({ a: 'abrir', v: 'ayuda' }, 'ayuda', 'Cómo se juega')}
       ${botonMenu({ a: 'abrir', v: 'opciones' }, 'engranaje', 'Opciones')}
     </nav>
-    <p class="menu-pie">Versión ${VERSION}, prototipo</p>`;
+    <p class="menu-pie">Versión ${VERSION}</p>`;
 }
 
 // ---------- Partida nueva, en tres pasos ----------
@@ -210,6 +214,7 @@ function htmlOpciones() {
     ${interruptor('rotulos', 'Nombres de provincias en el mapa')}
     <div class="op-partida">
       ${enJuego && enRed() ? `<button class="btn" data-a="salirMenu">${ico('casa')} ${soyAnfitrion() ? 'Cerrar la sala y salir (se guarda para reanudarla)' : 'Salir de la partida'}</button>`
+      : enJuego && enTutorial() ? `<button class="btn" data-a="tutSalir">${ico('casa')} Salir del tutorial</button>`
       : enJuego ? `<button class="btn" data-a="salirMenu">${ico('casa')} Guardar y salir al menú</button>
         <button class="btn" data-a="abrir" data-v="confirmar">${ico('usuario')} Empezar otra partida</button>`
       : cargar() ? `<button class="btn" data-a="borrarPartida">${ico('papelera')} Borrar la partida guardada</button>` : ''}
@@ -230,7 +235,7 @@ function htmlAyuda(esIntro) {
         ${punto('urna', 'Gana las elecciones', 'Ya como líder, haz promesas y campaña. Si tu partido es el más votado, gobiernas.')}
         ${punto('estrella', 'Capital político', 'Se gasta en casi todo lo que haces. Recuperas 2 cada mes.')}
       </ul>
-      <p class="nota">La carrera se acaba si el partido prefiere dos veces a ${LIDER_INICIAL} o si, ya como líder, su apoyo baja de 25.</p>
+      <p class="nota">Si pierdes el congreso o el liderazgo no se acaba la partida, pero el partido te marcará una directiva. Si no la cumples, te expulsa.</p>
       <button class="btn principal" data-a="cerrar">Empezar la carrera</button>`;
   }
   const promesas = esIntro && estado.promesas.length ? ` Tienes 12 meses para cumplir tus ${estado.promesas.length} promesas: las verás en Parlamento.` : '';
@@ -246,20 +251,11 @@ function htmlAyuda(esIntro) {
       ${punto('bandera', 'Haz diplomacia', 'Tratados y alianzas con los vecinos dan dinero, estabilidad e influencia.')}
       ${punto('espadas', 'Defiéndete o conquista', 'Recluta regimientos, declara guerras y ocupa provincias. Los vecinos también pelean entre sí.')}
     </ul>
-    <p class="nota">Pierdes si otro partido saca más escaños, si la deuda pasa de −400, si la estabilidad baja de 25 o si ocupan todo tu país.
-      Atajos: espacio pasa de mes y los números cambian de pestaña.</p>
-    <button class="btn principal" data-a="cerrar">${esIntro ? 'Empezar a gobernar' : 'Entendido'}</button>`;
-}
-
-function htmlMulti() {
-  return `<h2>${ico('gente')} Multijugador</h2>
-    <p>Este modo todavía no está disponible. La idea es que varias personas compartan el mismo mundo:</p>
-    <ul class="ayuda">
-      <li>${ico('globo')}<div><b>Un país por jugador</b><span>Tratados, alianzas, embargos y guerras negociados entre personas.</span></div></li>
-      <li>${ico('parlamento')}<div><b>Un parlamento compartido</b><span>Cada jugador lidera un partido y pacta las leyes con los demás.</span></div></li>
-      <li>${ico('reloj')}<div><b>Turnos sin prisa</b><span>Cada uno juega su mes cuando puede.</span></div></li>
-    </ul>
-    <button class="btn principal" data-a="cerrar">Entendido</button>`;
+    <p class="nota">Si pierdes las elecciones, la deuda pasa de −400 o la estabilidad baja de 25, caes del gobierno y pasas a la oposición con una
+      directiva de tu partido: incumplirla acaba la partida. También la acaba que ocupen todo tu país o que te pillen en un caso de corrupción.
+      Atajos: espacio pasa de mes, los números cambian de pestaña y «?» abre esta ayuda.</p>
+    <div class="botones"><button class="btn principal" data-a="cerrar">${esIntro ? 'Empezar a gobernar' : 'Entendido'}</button>
+      ${!esIntro && ui.pantalla === 'menu' ? '<button class="btn" data-a="tutorial">Hacer el tutorial</button>' : ''}</div>`;
 }
 
 function htmlConfirmar() {
